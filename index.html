@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>씨앤씨 면접반</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{ --bg:#f4f6fb; --card:#fff; --ink:#1c2333; --sub:#68718a; --pri:#4f6ef7; --ok:#16a34a; --no:#dc2626; --line:#e5e9f2; --warn:#b45309; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif; background:var(--bg); color:var(--ink); padding:16px; max-width:760px; margin:0 auto;}
+  .card{background:var(--card); border-radius:16px; padding:22px; box-shadow:0 2px 10px rgba(20,30,60,.06); margin-bottom:14px;}
+  h1{font-size:1.5rem; margin-bottom:6px;} h2{font-size:1.2rem; margin-bottom:8px;} h3{font-size:1.02rem; margin:14px 0 6px;}
+  .sub{color:var(--sub); font-size:.9rem; margin-bottom:14px;}
+  .small{color:var(--sub); font-size:.8rem;}
+  .pill{background:#eef2ff; border-radius:10px; padding:12px 14px; font-size:.95rem; margin:10px 0; line-height:1.5;}
+  .word{font-size:2rem; font-weight:800; margin:18px 0 8px;}
+  input[type=text],input[type=date],input[type=number],input[type=url]{width:100%; font-size:1.05rem; padding:11px 13px; border:2px solid var(--line); border-radius:10px; outline:none; margin:6px 0;}
+  input:focus,textarea:focus,select:focus{border-color:var(--pri);}
+  textarea{width:100%; min-height:320px; font-size:1rem; line-height:1.7; padding:14px; border:2px solid var(--line); border-radius:12px; outline:none; resize:vertical; font-family:inherit;}
+  .btn-primary{background:var(--pri); color:#fff; border:none; border-radius:10px; padding:13px 22px; font-size:1.05rem; font-weight:700; cursor:pointer; width:100%;}
+  .btn-ghost{background:#eef1f8; color:var(--ink); border:none; border-radius:10px; padding:10px 16px; font-size:.95rem; cursor:pointer;}
+  .btn-danger{background:#fee2e2; color:#b91c1c; border:none; border-radius:10px; padding:10px 16px; font-size:.95rem; cursor:pointer;}
+  .btn-sm{padding:6px 10px; font-size:.82rem; border-radius:8px;}
+  .row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .row .btn-primary{flex:1; width:auto;}
+  .student-btn{display:inline-block; background:#eef2ff; border:2px solid transparent; border-radius:12px; padding:14px 18px; margin:5px 4px; font-size:1.05rem; font-weight:700; cursor:pointer;}
+  .student-btn:active{border-color:var(--pri);}
+  .progress{height:10px; background:var(--line); border-radius:5px; overflow:hidden; margin:8px 0 4px;}
+  .progress div{height:100%; background:var(--pri); transition:width .2s;}
+  table{width:100%; border-collapse:collapse; font-size:.9rem; margin-top:10px;}
+  th,td{padding:8px 6px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top;}
+  th{color:var(--sub); font-weight:600; font-size:.8rem;}
+  .badge{font-size:.68rem; font-weight:700; border-radius:6px; padding:2px 7px; vertical-align:middle; margin-left:6px; white-space:nowrap;}
+  .b-oego{background:#dbeafe; color:#1d4ed8;} .b-jasa{background:#fef3c7; color:#b45309;}
+  .b-eng{background:#dcfce7; color:#166534;} .b-both{background:#e9d5ff; color:#7e22ce;} .b-none{background:#e5e9f2; color:#475569;}
+  .tabs{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;}
+  .tab{flex:1; min-width:90px; text-align:center; padding:10px; border-radius:10px; background:#eef1f8; font-weight:700; font-size:.9rem; cursor:pointer;}
+  .tab.on{background:var(--pri); color:#fff;}
+  select{font-size:1rem; padding:10px; border:2px solid var(--line); border-radius:10px; background:#fff; margin:6px 0;}
+  .flag{background:#f0fdf4; color:#166534; font-size:.85rem; border-radius:8px; padding:9px 11px; margin:8px 0; line-height:1.5;}
+  .flag.amber{background:#fffbeb; color:#92400e;}
+  .flag.red{background:#fef2f2; color:#991b1b;}
+  .item{border:1px solid var(--line); border-radius:12px; padding:14px; margin:10px 0;}
+  .item:active{border-color:var(--pri);}
+  .item h4{font-size:1rem; margin-bottom:4px;}
+  .clickable{cursor:pointer;}
+  .comment{background:#fffbeb; border-radius:10px; padding:10px 12px; margin:8px 0; font-size:.92rem; line-height:1.6;}
+  .comment .small{margin-top:4px; display:block;}
+  .cnt{font-size:.82rem; color:var(--sub); text-align:right; margin-top:4px;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;}
+  pre.essay-view{white-space:pre-wrap; font-family:inherit; font-size:.98rem; line-height:1.8; background:#f8fafc; border-radius:12px; padding:16px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ================= 설정 ================= */
+const CONFIG = {
+  SUPABASE_URL: "https://xtxuozcbeqruuigeijsz.supabase.co",
+  SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM",
+  // ▼ Apps Script 웹 앱 URL (면접반 업로드 백엔드)
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxZoPEmc_hVabGyF9O0oOQAmb3WYr0XGrEIPkX8xDiHzfx7Mkv5Gam_mPnvi5ooP8Fihg/exec",
+  CHUNK: 8 * 1024 * 1024   // 8MB (256KB의 배수 — 변경 금지)
+};
+const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+const app = document.getElementById("app");
+
+/* ================= 상태 ================= */
+let ME = null;          // 로그인한 학생 {id,name,track,interview_class,...}
+let TPIN = null;        // 선생님 PIN(검증 후 보관)
+let PINLIST = null;     // 선생님용 학생·PIN 목록
+
+/* ================= 유틸 ================= */
+const esc = s => String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const err = e => { app.innerHTML = `<div class="card"><h2>오류</h2><div class="flag red">${esc(e.message||e)}</div><div class="row"><button class="btn-ghost" onclick="home()">← 처음으로</button></div></div>`; throw e; };
+const fmtDT = t => { const d=new Date(t); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const fmtD = t => t ? String(t).slice(0,10).replace(/-/g,".") : "";
+const trackBadge = s => s.track==="interview" ? '<span class="badge b-oego">면접</span>'
+  : s.track==="both" ? '<span class="badge b-both">면접+영어</span>' : '<span class="badge b-eng">영어</span>';
+const classBadge = s => s.interview_class==="외고국제고" ? '<span class="badge b-oego">외고·국제고</span>'
+  : s.interview_class==="자사고" ? '<span class="badge b-jasa">자사고</span>' : "";
+const mb = b => b ? (b/1024/1024).toFixed(1)+"MB" : "-";
+const isInterview = s => s.track==="interview" || s.track==="both";
+/* 대상 필터: 분반 미지정 학생에게는 전부 보여줌 */
+const forMe = (row, st) => row.target==="전체" || !st.interview_class || row.target===st.interview_class;
+
+/* ================= Apps Script 업로드 ================= */
+async function gsPost(body){
+  const r = await fetch(CONFIG.APPS_SCRIPT_URL, { method:"POST", body: JSON.stringify(body) });
+  const j = await r.json();
+  if(j.error) throw new Error(j.error);
+  return j;
+}
+const blobB64 = blob => new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(String(r.result).split(",")[1]); r.onerror=no; r.readAsDataURL(blob); });
+async function driveUpload(file, kind, studentName, onProgress){
+  if(!CONFIG.APPS_SCRIPT_URL) throw new Error("업로드 서버가 아직 연결되지 않았어요. 선생님께 알려주세요.");
+  if(!file.size) throw new Error("빈 파일이에요.");
+  const init = await gsPost({ action:"init", kind, student:studentName, filename:file.name, mimeType:file.type||"application/octet-stream", size:file.size });
+  let off = 0, res = null;
+  while(off < file.size){
+    const slice = file.slice(off, Math.min(off+CONFIG.CHUNK, file.size));
+    const b64 = await blobB64(slice);
+    res = await gsPost({ action:"chunk", uploadId:init.uploadId, offset:off, total:file.size, dataB64:b64 });
+    off += slice.size;
+    if(onProgress) onProgress(Math.min(100, Math.round(off/file.size*100)));
+  }
+  if(!res || !res.done) throw new Error("업로드가 완료되지 않았어요. 다시 시도하세요.");
+  return res; // {fileId, link}
+}
+
+/* ================= 로그인 화면 ================= */
+async function home(){
+  ME = null; sessionStorage.removeItem("ihub_me");
+  app.innerHTML = `<div class="card"><h1>씨앤씨 면접반 🎤</h1><div class="sub">불러오는 중...</div></div>`;
+  const { data: students, error } = await sb.from("students").select("*").eq("active", true).order("name");
+  if(error) err(error);
+  const iv  = students.filter(isInterview);
+  const eng = students.filter(s=>!isInterview(s));
+  const btn = s => `<button class="student-btn" onclick='pickStudent(${JSON.stringify(s)})'>${esc(s.name)}</button>`;
+  app.innerHTML = `
+   <div class="card">
+     <h1>씨앤씨 면접반 🎤</h1>
+     <div class="sub">이름을 선택하고 개인 비밀번호로 들어오세요</div>
+     <h3>면접반</h3>
+     ${iv.map(btn).join("") || '<div class="pill">등록된 학생이 없어요.</div>'}
+     ${eng.length?`<h3>영어수업</h3>${eng.map(btn).join("")}`:""}
+     <div class="row"><button class="btn-ghost btn-sm" onclick="teacherLogin()">🔑 선생님</button></div>
+   </div>`;
+}
+
+window.pickStudent = function(student){
+  app.innerHTML = `
+   <div class="card">
+     <h2>본인 확인</h2>
+     <div class="word" style="font-size:2.2rem; text-align:center">${esc(student.name)}</div>
+     <div class="pill">'<b>${esc(student.name)}</b>' 학생 본인이 맞나요? 개인 비밀번호 4자리를 입력하세요.<br><span class="small">비밀번호는 다른 사람에게 알려주지 마세요.</span></div>
+     <div class="row" style="justify-content:center">
+       <input type="password" id="pinInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
+         placeholder="비밀번호 4자리" style="text-align:center; font-size:1.3rem; letter-spacing:.35em; width:190px; padding:10px; border:2px solid #cbd5e1; border-radius:10px">
+     </div>
+     <div class="row"><button class="btn-primary" onclick='pinGo(${JSON.stringify(student)})'>네, ${esc(student.name)} 입니다 →</button></div>
+     <div class="row"><button class="btn-ghost btn-sm" onclick="home()">← 아니에요, 이름 다시 선택</button></div>
+   </div>`;
+  const inp = document.getElementById("pinInput");
+  inp.focus();
+  inp.addEventListener("keydown", e=>{ if(e.key==="Enter") pinGo(student); });
+};
+
+window.pinGo = async function(student){
+  const inp = document.getElementById("pinInput");
+  const pin = (inp && inp.value || "").trim();
+  if(!/^\d{4}$/.test(pin)){ alert("비밀번호 4자리(숫자)를 입력하세요"); if(inp) inp.focus(); return; }
+  document.querySelectorAll("button").forEach(b=>b.disabled=true);
+  const { data: ok, error } = await sb.rpc("student_pin_verify", { p_student_id: student.id, p_pin: pin });
+  if(error){ document.querySelectorAll("button").forEach(b=>b.disabled=false); return alert("오류: "+error.message); }
+  if(!ok){
+    document.querySelectorAll("button").forEach(b=>b.disabled=false);
+    if(inp){ inp.value=""; inp.focus(); }
+    return alert("비밀번호가 달라요. 다시 확인하세요.");
+  }
+  ME = student;
+  sessionStorage.setItem("ihub_me", JSON.stringify(student));
+  studentHome("essay");
+};
+
+/* ================= 학생 홈 ================= */
+window.studentHome = function(tab){
+  if(!ME) return home();
+  app.innerHTML = `
+   <div class="card">
+     <div class="topbar">
+       <h1>${esc(ME.name)} ${classBadge(ME)}</h1>
+       <button class="btn-ghost btn-sm" onclick="home()">로그아웃</button>
+     </div>
+     <div class="tabs">
+       <div class="tab ${tab==="essay"?"on":""}" onclick="studentHome('essay')">📝 내 자소서</div>
+       <div class="tab ${tab==="video"?"on":""}" onclick="studentHome('video')">🎬 영상 과제</div>
+       <div class="tab ${tab==="mat"?"on":""}" onclick="studentHome('mat')">📚 강의자료</div>
+     </div>
+     <div id="pane"><div class="sub">불러오는 중...</div></div>
+   </div>`;
+  if(tab==="essay") paneEssays();
+  else if(tab==="video") paneVideos();
+  else paneMaterials();
+};
+
+/* ---------- 자소서 ---------- */
+async function paneEssays(){
+  const pane = document.getElementById("pane");
+  const { data: essays, error } = await sb.from("essays").select("*").eq("student_id", ME.id).order("updated_at",{ascending:false});
+  if(error) err(error);
+  pane.innerHTML = `
+    <div class="sub">지원 학교별로 자소서를 만들고, 고칠 때마다 저장하세요. 이전 버전은 자동 보관됩니다.</div>
+    ${essays.map(e=>`
+      <div class="item clickable" onclick="openEssay('${e.id}')">
+        <h4>${esc(e.school)} — ${esc(e.title)}</h4>
+        <div class="small">글자수 ${e.content.length}자(공백 포함) · 마지막 저장 ${fmtDT(e.updated_at)}</div>
+      </div>`).join("") || '<div class="pill">아직 자소서가 없어요. 아래에서 새로 만들어 보세요.</div>'}
+    <h3>새 자소서 만들기</h3>
+    <input type="text" id="newSchool" placeholder="지원 학교 (예: 이화외고, 하나고, 공통)">
+    <input type="text" id="newTitle" placeholder="제목 (예: 자기주도학습 영역)">
+    <div class="row"><button class="btn-primary" onclick="createEssay()">＋ 만들기</button></div>`;
+}
+
+window.createEssay = async function(){
+  const school = (document.getElementById("newSchool").value||"").trim() || "공통";
+  const title  = (document.getElementById("newTitle").value||"").trim() || "자기소개서";
+  const { data, error } = await sb.from("essays").insert({ student_id: ME.id, school, title }).select().single();
+  if(error) err(error);
+  openEssay(data.id);
+};
+
+window.openEssay = async function(essayId){
+  const [{ data: e, error: e1 }, { data: comments }, { count: revCount }] = await Promise.all([
+    sb.from("essays").select("*").eq("id", essayId).single(),
+    sb.from("essay_comments").select("*").eq("essay_id", essayId).order("created_at",{ascending:false}),
+    sb.from("essay_revisions").select("*",{count:"exact",head:true}).eq("essay_id", essayId)
+  ]);
+  if(e1) err(e1);
+  app.innerHTML = `
+   <div class="card">
+     <div class="topbar">
+       <h2>${esc(e.school)} — ${esc(e.title)}</h2>
+       <button class="btn-ghost btn-sm" onclick="studentHome('essay')">← 목록</button>
+     </div>
+     <div class="small">마지막 저장 ${fmtDT(e.updated_at)} · 보관된 버전 ${revCount||0}개</div>
+     <textarea id="essayText">${esc(e.content)}</textarea>
+     <div class="cnt" id="cnt"></div>
+     <div class="row">
+       <button class="btn-primary" onclick="saveEssay('${e.id}')">💾 저장</button>
+       <button class="btn-ghost" onclick="essayHistory('${e.id}')">🕘 이전 버전</button>
+       <button class="btn-danger btn-sm" onclick="deleteEssay('${e.id}')">삭제</button>
+     </div>
+     ${(comments&&comments.length)?`<h3>👨‍🏫 선생님 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)}</span></div>`).join("")}`:""}
+   </div>`;
+  const ta = document.getElementById("essayText"), cnt = document.getElementById("cnt");
+  const upd = ()=>{ const t=ta.value; cnt.textContent = `공백 포함 ${t.length}자 · 공백 제외 ${t.replace(/\s/g,"").length}자`; };
+  ta.addEventListener("input", upd); upd();
+};
+
+window.saveEssay = async function(essayId){
+  const content = document.getElementById("essayText").value;
+  const { error: e1 } = await sb.from("essays").update({ content, updated_at: new Date().toISOString() }).eq("id", essayId);
+  if(e1) err(e1);
+  const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content });
+  if(e2) err(e2);
+  alert("저장했어요! (이전 버전도 함께 보관됩니다)");
+  openEssay(essayId);
+};
+
+window.deleteEssay = async function(essayId){
+  if(!confirm("이 자소서를 삭제할까요? 보관된 버전도 함께 지워져요.")) return;
+  const { error } = await sb.from("essays").delete().eq("id", essayId);
+  if(error) err(error);
+  studentHome("essay");
+};
+
+window.essayHistory = async function(essayId){
+  const { data: revs, error } = await sb.from("essay_revisions").select("*").eq("essay_id", essayId).order("saved_at",{ascending:false}).limit(30);
+  if(error) err(error);
+  app.innerHTML = `
+   <div class="card">
+     <div class="topbar"><h2>🕘 이전 버전</h2><button class="btn-ghost btn-sm" onclick="openEssay('${essayId}')">← 돌아가기</button></div>
+     ${revs.map(r=>`
+       <div class="item">
+         <div class="small">${fmtDT(r.saved_at)} · ${r.content.length}자</div>
+         <pre class="essay-view" style="max-height:130px; overflow:hidden; margin-top:6px">${esc(r.content.slice(0,300))}${r.content.length>300?"…":""}</pre>
+         <div class="row"><button class="btn-ghost btn-sm" onclick="restoreRev('${essayId}','${r.id}')">이 버전 불러오기</button></div>
+       </div>`).join("") || '<div class="pill">보관된 버전이 아직 없어요.</div>'}
+   </div>`;
+};
+
+window.restoreRev = async function(essayId, revId){
+  const { data: r, error } = await sb.from("essay_revisions").select("*").eq("id", revId).single();
+  if(error) err(error);
+  if(!confirm("이 버전 내용을 편집창으로 불러올까요? (저장을 눌러야 확정돼요)")) return;
+  await openEssay(essayId);
+  document.getElementById("essayText").value = r.content;
+  document.getElementById("essayText").dispatchEvent(new Event("input"));
+};
+
+/* ---------- 영상 과제 ---------- */
+async function paneVideos(){
+  const pane = document.getElementById("pane");
+  const [{ data: asgs, error: e1 }, { data: subs, error: e2 }] = await Promise.all([
+    sb.from("assignments").select("*").eq("active", true).order("due_date",{ascending:true}),
+    sb.from("video_submissions").select("*").eq("student_id", ME.id).order("created_at",{ascending:false})
+  ]);
+  if(e1) err(e1); if(e2) err(e2);
+  const myAsgs = asgs.filter(a=>forMe(a, ME));
+  window._asgTitles = {}; asgs.forEach(a=>window._asgTitles[a.id]=a.title);
+  const subFor = id => subs.filter(s=>s.assignment_id===id);
+  pane.innerHTML = `
+    <div class="sub">과제를 골라 동영상을 올리세요. 영상은 선생님 드라이브로 안전하게 저장됩니다.</div>
+    ${!CONFIG.APPS_SCRIPT_URL?'<div class="flag amber">⚙️ 업로드 서버가 아직 연결 전이에요. 목록 열람만 가능합니다.</div>':""}
+    ${myAsgs.map(a=>{
+      const mine = subFor(a.id);
+      return `<div class="item">
+        <h4>${esc(a.title)} ${a.target!=="전체"?`<span class="badge ${a.target==="자사고"?"b-jasa":"b-oego"}">${esc(a.target)}</span>`:""}</h4>
+        ${a.description?`<div class="small" style="margin:4px 0">${esc(a.description)}</div>`:""}
+        ${a.due_date?`<div class="small">마감: <b>${fmtD(a.due_date)}</b></div>`:""}
+        ${mine.length?`<div class="flag">✅ 제출 완료 (${mine.length}건) — ${mine.map(m=>esc(m.filename)+" · "+fmtDT(m.created_at)).join("<br>")}</div>`
+                     :`<div class="flag amber">⏳ 아직 제출 전이에요</div>`}
+        <div class="row"><button class="btn-ghost btn-sm" onclick="uploadUI('${a.id}')">📤 ${mine.length?"다시 제출":"영상 올리기"}</button></div>
+      </div>`;
+    }).join("") || '<div class="pill">지금은 등록된 영상 과제가 없어요.</div>'}
+    <h3>자유 업로드</h3>
+    <div class="small">과제 외에 선생님께 보여드릴 연습 영상이 있으면 여기로 올리세요.</div>
+    <div class="row"><button class="btn-ghost btn-sm" onclick="uploadUI(null)">📤 영상 올리기</button></div>
+    ${subs.filter(s=>!s.assignment_id).length?`<h3>내 자유 업로드</h3>${subs.filter(s=>!s.assignment_id).map(m=>`<div class="small">· ${esc(m.filename)} (${mb(m.bytes)}) — ${fmtDT(m.created_at)}</div>`).join("")}`:""}`;
+}
+
+window.uploadUI = function(assignmentId){
+  const title = assignmentId ? (window._asgTitles||{})[assignmentId] || "과제 제출" : "자유 업로드";
+  app.innerHTML = `
+   <div class="card">
+     <div class="topbar"><h2>📤 ${esc(title)}</h2><button class="btn-ghost btn-sm" onclick="studentHome('video')">← 돌아가기</button></div>
+     <div class="pill">동영상 파일을 선택하세요. 휴대폰으로 찍은 영상 그대로 올려도 돼요.<br><span class="small">업로드 중에는 화면을 닫지 마세요. 와이파이 환경을 추천!</span></div>
+     <input type="file" id="vidFile" accept="video/*,audio/*" style="margin:10px 0; width:100%">
+     <input type="text" id="vidNote" placeholder="메모 (선택 — 예: 2번 문항 연습, 1차 시도)">
+     <div id="upProg"></div>
+     <div class="row"><button class="btn-primary" id="upBtn" onclick='doUpload(${assignmentId?`"${assignmentId}"`:"null"})'>업로드 시작</button></div>
+   </div>`;
+};
+
+window.doUpload = async function(assignmentId){
+  const f = document.getElementById("vidFile").files[0];
+  if(!f) return alert("파일을 먼저 선택하세요");
+  const note = (document.getElementById("vidNote").value||"").trim();
+  const btn = document.getElementById("upBtn"); btn.disabled = true; btn.textContent = "업로드 중...";
+  const prog = document.getElementById("upProg");
+  prog.innerHTML = `<div class="progress"><div id="bar" style="width:0%"></div></div><div class="small" id="pct">0% · ${esc(f.name)} (${mb(f.size)})</div>`;
+  try{
+    const res = await driveUpload(f, "video", ME.name, p=>{
+      document.getElementById("bar").style.width = p+"%";
+      document.getElementById("pct").textContent = p+"% · "+f.name+" ("+mb(f.size)+")";
+    });
+    const { error } = await sb.from("video_submissions").insert({
+      student_id: ME.id, assignment_id: assignmentId, filename: f.name, bytes: f.size,
+      drive_file_id: res.fileId, drive_link: res.link, note: note || null
+    });
+    if(error) throw error;
+    alert("업로드 완료! 선생님께 잘 전달됐어요 🎉");
+    studentHome("video");
+  }catch(e){
+    btn.disabled = false; btn.textContent = "업로드 시작";
+    alert("업로드 실패: " + (e.message||e));
+  }
+};
+
+/* ---------- 강의자료 ---------- */
+async function paneMaterials(){
+  const pane = document.getElementById("pane");
+  const { data: mats, error } = await sb.from("materials").select("*").eq("active", true).order("week",{ascending:false}).order("created_at",{ascending:false});
+  if(error) err(error);
+  const mine = mats.filter(m=>forMe(m, ME));
+  pane.innerHTML = `
+    <div class="sub">선생님이 올려주신 수업 자료입니다.</div>
+    ${mine.map(m=>`
+      <div class="item">
+        <h4>${m.week?`[${m.week}주차] `:""}${esc(m.title)} ${m.target!=="전체"?`<span class="badge ${m.target==="자사고"?"b-jasa":"b-oego"}">${esc(m.target)}</span>`:""}</h4>
+        ${m.description?`<div class="small" style="margin:4px 0">${esc(m.description)}</div>`:""}
+        <div class="row"><button class="btn-ghost btn-sm" onclick="window.open('${esc(m.url)}','_blank')">📂 열기</button></div>
+      </div>`).join("") || '<div class="pill">아직 올라온 자료가 없어요.</div>'}`;
+}
+
+/* ================= 선생님 ================= */
+/* 비밀번호 입력(마스킹) 모달 */
+function askPin(label){
+  return new Promise(res=>{
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999";
+    ov.innerHTML = `<div style="background:#fff;border-radius:16px;padding:24px;width:280px;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+      <div style="font-weight:800;margin-bottom:10px">${label}</div>
+      <input id="_pinAsk" type="password" inputmode="numeric" maxlength="4" autocomplete="off"
+        style="width:100%;text-align:center;font-size:1.3rem;letter-spacing:.35em;padding:10px;border:2px solid #cbd5e1;border-radius:10px;box-sizing:border-box">
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button id="_pinCancel" style="flex:1;background:#eef1f8;border:none;border-radius:10px;padding:11px;font-size:.95rem;cursor:pointer">취소</button>
+        <button id="_pinOk" style="flex:1;background:#4f6ef7;color:#fff;border:none;border-radius:10px;padding:11px;font-weight:700;font-size:.95rem;cursor:pointer">확인</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector("#_pinAsk");
+    const done = v => { ov.remove(); res(v); };
+    ov.querySelector("#_pinOk").onclick = ()=>done(inp.value.trim());
+    ov.querySelector("#_pinCancel").onclick = ()=>done(null);
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter") done(inp.value.trim()); });
+    inp.focus();
+  });
+}
+
+window.teacherLogin = async function(){
+  const pin = await askPin("선생님 비밀번호");
+  if(pin===null || pin==="") return;
+  const { data, error } = await sb.rpc("teacher_pin_list", { p_teacher_pin: pin });
+  if(error) return alert(error.message);
+  TPIN = pin; PINLIST = data;
+  teacherHome("students");
+};
+
+window.teacherHome = function(tab){
+  if(!TPIN) return home();
+  app.innerHTML = `
+   <div class="card">
+     <div class="topbar"><h1>👨‍🏫 선생님 모드</h1><button class="btn-ghost btn-sm" onclick="home()">나가기</button></div>
+     <div class="tabs">
+       <div class="tab ${tab==="students"?"on":""}" onclick="teacherHome('students')">학생·비번</div>
+       <div class="tab ${tab==="essays"?"on":""}" onclick="teacherHome('essays')">자소서</div>
+       <div class="tab ${tab==="asg"?"on":""}" onclick="teacherHome('asg')">과제·제출</div>
+       <div class="tab ${tab==="mat"?"on":""}" onclick="teacherHome('mat')">강의자료</div>
+     </div>
+     <div id="pane"><div class="sub">불러오는 중...</div></div>
+   </div>`;
+  if(tab==="students") tPaneStudents();
+  else if(tab==="essays") tPaneEssays();
+  else if(tab==="asg") tPaneAssignments();
+  else tPaneMaterials();
+};
+
+/* ---------- 학생·비번 ---------- */
+async function tPaneStudents(){
+  const pane = document.getElementById("pane");
+  const [{ data: pins, error: e1 }, { data: students, error: e2 }] = await Promise.all([
+    sb.rpc("teacher_pin_list", { p_teacher_pin: TPIN }),
+    sb.from("students").select("*").order("name")
+  ]);
+  if(e1) err(e1); if(e2) err(e2);
+  const map = {}; students.forEach(s=>map[s.id]=s);
+  const rows = pins.map(p=>({ ...p, ...(map[p.student_id]||{}) }));
+  const ivRows = rows.filter(isInterview), engRows = rows.filter(r=>!isInterview(r));
+  const tr = r => `<tr>
+    <td><b>${esc(r.name)}</b> ${trackBadge(r)}</td>
+    <td><select onchange="setClass('${r.student_id}', this.value)" ${isInterview(r)?"":"disabled"}>
+      <option value="" ${!r.interview_class?"selected":""}>분반 -</option>
+      <option value="외고국제고" ${r.interview_class==="외고국제고"?"selected":""}>외고·국제고</option>
+      <option value="자사고" ${r.interview_class==="자사고"?"selected":""}>자사고</option>
+    </select></td>
+    <td style="font-family:monospace; font-size:1rem"><b>${esc(r.pin)}</b></td>
+    <td><button class="btn-ghost btn-sm" onclick="changePin('${r.student_id}','${esc(r.name)}')">변경</button>
+        <button class="btn-ghost btn-sm" onclick="toggleActive('${r.student_id}', ${!r.active})">${r.active?"숨기기":"복구"}</button></td>
+  </tr>`;
+  pane.innerHTML = `
+    <div class="sub">비번은 학생·학부모에게 개별 전달하세요. 기존 영어수업 비번은 그대로입니다.</div>
+    <h3>면접반 (${ivRows.length}명)</h3>
+    <table><tr><th>이름</th><th>분반</th><th>비번</th><th></th></tr>${ivRows.map(tr).join("")}</table>
+    <h3>영어수업 (${engRows.length}명)</h3>
+    <table><tr><th>이름</th><th>분반</th><th>비번</th><th></th></tr>${engRows.map(tr).join("")}</table>
+    <h3>학생 추가</h3>
+    <input type="text" id="nsName" placeholder="이름">
+    <select id="nsTrack"><option value="interview">면접반</option><option value="english">영어수업</option><option value="both">면접+영어</option></select>
+    <div class="row"><button class="btn-primary" onclick="addStudent()">＋ 추가 (비번 자동 생성)</button></div>
+    <div class="small" style="margin-top:10px">📨 비번 안내문 복사: <button class="btn-ghost btn-sm" onclick="copyPinMsg()">면접반 전체 복사</button></div>`;
+  window._ivRows = ivRows;
+}
+
+window.setClass = async function(id, v){
+  const { error } = await sb.from("students").update({ interview_class: v || null }).eq("id", id);
+  if(error) alert(error.message);
+};
+window.changePin = async function(id, name){
+  const p = prompt(`${name} 학생의 새 비번 4자리`);
+  if(p===null) return;
+  const { error } = await sb.rpc("teacher_pin_set", { p_teacher_pin: TPIN, p_student_id: id, p_pin: p.trim() });
+  if(error) return alert(error.message);
+  tPaneStudents();
+};
+window.toggleActive = async function(id, active){
+  const { error } = await sb.from("students").update({ active }).eq("id", id);
+  if(error) return alert(error.message);
+  tPaneStudents();
+};
+window.addStudent = async function(){
+  const name = (document.getElementById("nsName").value||"").trim();
+  if(!name) return alert("이름을 입력하세요");
+  const track = document.getElementById("nsTrack").value;
+  const { error } = await sb.from("students").insert({ name, class_day:"면접", track });
+  if(error) return alert(error.message);
+  tPaneStudents();
+};
+window.copyPinMsg = function(){
+  const msg = (window._ivRows||[]).map(r=>`${r.name}: ${r.pin}`).join("\n");
+  navigator.clipboard.writeText(msg).then(()=>alert("복사했어요:\n\n"+msg));
+};
+
+/* ---------- 자소서 열람·코멘트 ---------- */
+async function tPaneEssays(){
+  const pane = document.getElementById("pane");
+  const { data: essays, error } = await sb.from("essays").select("*, students(name, interview_class)").order("updated_at",{ascending:false});
+  if(error) err(error);
+  pane.innerHTML = `
+    <div class="sub">학생이 마지막으로 저장한 순서입니다. 눌러서 열람·코멘트하세요.</div>
+    ${essays.map(e=>`
+      <div class="item clickable" onclick="tOpenEssay('${e.id}')">
+        <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""}</h4>
+        <div class="small">${e.content.length}자 · ${fmtDT(e.updated_at)}</div>
+      </div>`).join("") || '<div class="pill">아직 저장된 자소서가 없어요.</div>'}`;
+}
+
+window.tOpenEssay = async function(essayId){
+  const [{ data: e, error: e1 }, { data: comments }, { data: revs }] = await Promise.all([
+    sb.from("essays").select("*, students(name)").eq("id", essayId).single(),
+    sb.from("essay_comments").select("*").eq("essay_id", essayId).order("created_at",{ascending:false}),
+    sb.from("essay_revisions").select("id, saved_at").eq("essay_id", essayId).order("saved_at",{ascending:false})
+  ]);
+  if(e1) err(e1);
+  app.innerHTML = `
+   <div class="card">
+     <div class="topbar"><h2>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)}</h2>
+       <button class="btn-ghost btn-sm" onclick="teacherHome('essays')">← 목록</button></div>
+     <div class="small">공백 포함 ${e.content.length}자 · 공백 제외 ${e.content.replace(/\s/g,"").length}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
+     <pre class="essay-view">${esc(e.content)||"(아직 내용이 없어요)"}</pre>
+     <h3>코멘트 남기기</h3>
+     <textarea id="cmt" style="min-height:110px" placeholder="학생 화면에 그대로 보입니다"></textarea>
+     <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button></div>
+     ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
+   </div>`;
+};
+window.tAddComment = async function(essayId){
+  const content = (document.getElementById("cmt").value||"").trim();
+  if(!content) return alert("내용을 입력하세요");
+  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content });
+  if(error) return alert(error.message);
+  tOpenEssay(essayId);
+};
+window.tDelComment = async function(id, essayId){
+  const { error } = await sb.from("essay_comments").delete().eq("id", id);
+  if(error) return alert(error.message);
+  tOpenEssay(essayId);
+};
+
+/* ---------- 과제·제출 ---------- */
+async function tPaneAssignments(){
+  const pane = document.getElementById("pane");
+  const [{ data: asgs, error: e1 }, { data: subs, error: e2 }, { data: students }] = await Promise.all([
+    sb.from("assignments").select("*").order("created_at",{ascending:false}),
+    sb.from("video_submissions").select("*, students(name)").order("created_at",{ascending:false}),
+    sb.from("students").select("*").eq("active", true)
+  ]);
+  if(e1) err(e1); if(e2) err(e2);
+  const ivCount = students.filter(isInterview).length;
+  pane.innerHTML = `
+    <h3>새 과제 등록</h3>
+    <input type="text" id="aTitle" placeholder="과제 제목 (예: 1분 자기소개 영상)">
+    <input type="text" id="aDesc" placeholder="설명 (선택)">
+    <div class="row" style="align-items:center">
+      <input type="date" id="aDue" style="flex:1">
+      <select id="aTarget"><option value="전체">전체</option><option value="외고국제고">외고·국제고</option><option value="자사고">자사고</option></select>
+    </div>
+    <div class="row"><button class="btn-primary" onclick="tAddAsg()">＋ 과제 올리기</button></div>
+    <h3>과제별 제출 현황</h3>
+    ${asgs.map(a=>{
+      const s = subs.filter(x=>x.assignment_id===a.id);
+      const names = [...new Set(s.map(x=>x.students?.name))];
+      return `<div class="item ${a.active?"":"small"}">
+        <h4>${esc(a.title)} ${a.target!=="전체"?`<span class="badge ${a.target==="자사고"?"b-jasa":"b-oego"}">${esc(a.target)}</span>`:""} ${a.active?"":'<span class="badge b-none">마감됨</span>'}</h4>
+        <div class="small">${a.due_date?`마감 ${fmtD(a.due_date)} · `:""}제출 ${names.length}명 / 면접반 ${ivCount}명</div>
+        ${s.map(x=>`<div class="small">· <b>${esc(x.students?.name)}</b> — ${esc(x.filename)} (${mb(x.bytes)}) ${fmtDT(x.created_at)}${x.note?` · "${esc(x.note)}"`:""} ${x.drive_link?`<a href="${esc(x.drive_link)}" target="_blank">▶ 보기</a>`:""}</div>`).join("")}
+        <div class="row"><button class="btn-ghost btn-sm" onclick="tToggleAsg('${a.id}', ${!a.active})">${a.active?"마감하기":"다시 열기"}</button></div>
+      </div>`;
+    }).join("") || '<div class="pill">등록된 과제가 없어요.</div>'}
+    ${subs.filter(x=>!x.assignment_id).length?`<h3>자유 업로드</h3>${subs.filter(x=>!x.assignment_id).map(x=>`<div class="small">· <b>${esc(x.students?.name)}</b> — ${esc(x.filename)} (${mb(x.bytes)}) ${fmtDT(x.created_at)}${x.note?` · "${esc(x.note)}"`:""} ${x.drive_link?`<a href="${esc(x.drive_link)}" target="_blank">▶ 보기</a>`:""}</div>`).join("")}`:""}`;
+}
+window.tAddAsg = async function(){
+  const title = (document.getElementById("aTitle").value||"").trim();
+  if(!title) return alert("제목을 입력하세요");
+  const { error } = await sb.from("assignments").insert({
+    title,
+    description: (document.getElementById("aDesc").value||"").trim() || null,
+    due_date: document.getElementById("aDue").value || null,
+    target: document.getElementById("aTarget").value
+  });
+  if(error) return alert(error.message);
+  tPaneAssignments();
+};
+window.tToggleAsg = async function(id, active){
+  const { error } = await sb.from("assignments").update({ active }).eq("id", id);
+  if(error) return alert(error.message);
+  tPaneAssignments();
+};
+
+/* ---------- 강의자료 관리 ---------- */
+async function tPaneMaterials(){
+  const pane = document.getElementById("pane");
+  const { data: mats, error } = await sb.from("materials").select("*").order("created_at",{ascending:false});
+  if(error) err(error);
+  pane.innerHTML = `
+    <h3>자료 올리기</h3>
+    <input type="text" id="mTitle" placeholder="자료 제목 (예: 1주차 오리엔테이션 슬라이드)">
+    <input type="text" id="mDesc" placeholder="설명 (선택)">
+    <div class="row" style="align-items:center">
+      <input type="number" id="mWeek" placeholder="주차" style="flex:1">
+      <select id="mTarget"><option value="전체">전체</option><option value="외고국제고">외고·국제고</option><option value="자사고">자사고</option></select>
+    </div>
+    <div class="pill">방법 A — 파일 업로드 (내 드라이브 '면접반 플랫폼/강의자료'에 저장 + 자동 링크 공유)<br>
+      <input type="file" id="mFile" style="margin-top:6px"></div>
+    <div class="pill">방법 B — 링크 붙여넣기 (이미 드라이브·유튜브 등에 있는 자료)<br>
+      <input type="url" id="mUrl" placeholder="https://..." style="margin-top:6px"></div>
+    <div id="mProg"></div>
+    <div class="row"><button class="btn-primary" id="mBtn" onclick="tAddMaterial()">＋ 등록</button></div>
+    <h3>등록된 자료</h3>
+    ${mats.map(m=>`
+      <div class="item ${m.active?"":"small"}">
+        <h4>${m.week?`[${m.week}주차] `:""}${esc(m.title)} ${m.target!=="전체"?`<span class="badge ${m.target==="자사고"?"b-jasa":"b-oego"}">${esc(m.target)}</span>`:""} ${m.active?"":'<span class="badge b-none">숨김</span>'}</h4>
+        <div class="small"><a href="${esc(m.url)}" target="_blank">${esc(m.url.slice(0,60))}…</a></div>
+        <div class="row"><button class="btn-ghost btn-sm" onclick="tToggleMat('${m.id}', ${!m.active})">${m.active?"숨기기":"복구"}</button></div>
+      </div>`).join("") || '<div class="pill">등록된 자료가 없어요.</div>'}`;
+}
+window.tAddMaterial = async function(){
+  const title = (document.getElementById("mTitle").value||"").trim();
+  if(!title) return alert("제목을 입력하세요");
+  const f = document.getElementById("mFile").files[0];
+  let url = (document.getElementById("mUrl").value||"").trim();
+  const btn = document.getElementById("mBtn");
+  try{
+    if(f){
+      btn.disabled = true; btn.textContent = "업로드 중...";
+      const prog = document.getElementById("mProg");
+      prog.innerHTML = `<div class="progress"><div id="mBar" style="width:0%"></div></div><div class="small" id="mPct">0%</div>`;
+      const res = await driveUpload(f, "material", null, p=>{
+        document.getElementById("mBar").style.width = p+"%";
+        document.getElementById("mPct").textContent = p+"% · "+f.name;
+      });
+      url = res.link;
+    }
+    if(!url) return alert("파일을 선택하거나 링크를 붙여넣으세요");
+    const { error } = await sb.from("materials").insert({
+      title,
+      description: (document.getElementById("mDesc").value||"").trim() || null,
+      url,
+      week: parseInt(document.getElementById("mWeek").value) || null,
+      target: document.getElementById("mTarget").value
+    });
+    if(error) throw error;
+    tPaneMaterials();
+  }catch(e){
+    btn.disabled = false; btn.textContent = "＋ 등록";
+    alert("실패: " + (e.message||e));
+  }
+};
+window.tToggleMat = async function(id, active){
+  const { error } = await sb.from("materials").update({ active }).eq("id", id);
+  if(error) return alert(error.message);
+  tPaneMaterials();
+};
+
+/* ================= 시작 ================= */
+(function(){
+  const saved = sessionStorage.getItem("ihub_me");
+  if(saved){ try{ ME = JSON.parse(saved); return studentHome("essay"); }catch(_){} }
+  home();
+})();
+</script>
+</body>
+</html>
