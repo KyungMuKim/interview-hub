@@ -116,16 +116,13 @@ async function home(){
   app.innerHTML = `<div class="card"><h1>씨앤씨 면접반 🎤</h1><div class="sub">불러오는 중...</div></div>`;
   const { data: students, error } = await sb.from("students").select("*").eq("active", true).order("name");
   if(error) err(error);
-  const iv  = students.filter(isInterview);
-  const eng = students.filter(s=>!isInterview(s));
+  students.sort((a,b)=>a.name.localeCompare(b.name,"ko"));
   const btn = s => `<button class="student-btn" onclick='pickStudent(${JSON.stringify(s)})'>${esc(s.name)}</button>`;
   app.innerHTML = `
    <div class="card">
      <h1>씨앤씨 면접반 🎤</h1>
      <div class="sub">이름을 선택하고 개인 비밀번호로 들어오세요</div>
-     <h3>면접반</h3>
-     ${iv.map(btn).join("") || '<div class="pill">등록된 학생이 없어요.</div>'}
-     ${eng.length?`<h3>영어수업</h3>${eng.map(btn).join("")}`:""}
+     ${students.map(btn).join("") || '<div class="pill">등록된 학생이 없어요.</div>'}
      <div class="row"><button class="btn-ghost btn-sm" onclick="teacherLogin()">🔑 선생님</button></div>
    </div>`;
 }
