@@ -404,7 +404,7 @@ window.teacherHome = function(tab){
      <div class="tabs">
        <div class="tab ${tab==="students"?"on":""}" onclick="teacherHome('students')">학생·비번</div>
        <div class="tab ${tab==="essays"?"on":""}" onclick="teacherHome('essays')">자소서</div>
-       <div class="tab ${tab==="asg"?"on":""}" onclick="teacherHome('asg')">과제·제출</div>
+       <div class="tab ${tab==="asg"?"on":""}" onclick="teacherHome('asg')">영상과제 업로드</div>
        <div class="tab ${tab==="mat"?"on":""}" onclick="teacherHome('mat')">강의자료</div>
      </div>
      <div id="pane"><div class="sub">불러오는 중...</div></div>
@@ -553,7 +553,8 @@ async function tPaneAssignments(){
         <h4>${esc(a.title)} ${a.target!=="전체"?`<span class="badge ${a.target==="자사고"?"b-jasa":"b-oego"}">${esc(a.target)}</span>`:""} ${a.active?"":'<span class="badge b-none">마감됨</span>'}</h4>
         <div class="small">${a.due_date?`마감 ${fmtD(a.due_date)} · `:""}제출 ${names.length}명 / 면접반 ${ivCount}명</div>
         ${s.map(x=>`<div class="small">· <b>${esc(x.students?.name)}</b> — ${esc(x.filename)} (${mb(x.bytes)}) ${fmtDT(x.created_at)}${x.note?` · "${esc(x.note)}"`:""} ${x.drive_link?`<a href="${esc(x.drive_link)}" target="_blank">▶ 보기</a>`:""}</div>`).join("")}
-        <div class="row"><button class="btn-ghost btn-sm" onclick="tToggleAsg('${a.id}', ${!a.active})">${a.active?"마감하기":"다시 열기"}</button></div>
+        <div class="row"><button class="btn-ghost btn-sm" onclick="tToggleAsg('${a.id}', ${!a.active})">${a.active?"마감하기":"다시 열기"}</button>
+          <button class="btn-danger btn-sm" onclick="tDelAsg('${a.id}')">삭제</button></div>
       </div>`;
     }).join("") || '<div class="pill">등록된 과제가 없어요.</div>'}
     ${subs.filter(x=>!x.assignment_id).length?`<h3>자유 업로드</h3>${subs.filter(x=>!x.assignment_id).map(x=>`<div class="small">· <b>${esc(x.students?.name)}</b> — ${esc(x.filename)} (${mb(x.bytes)}) ${fmtDT(x.created_at)}${x.note?` · "${esc(x.note)}"`:""} ${x.drive_link?`<a href="${esc(x.drive_link)}" target="_blank">▶ 보기</a>`:""}</div>`).join("")}`:""}`;
@@ -572,6 +573,12 @@ window.tAddAsg = async function(){
 };
 window.tToggleAsg = async function(id, active){
   const { error } = await sb.from("assignments").update({ active }).eq("id", id);
+  if(error) return alert(error.message);
+  tPaneAssignments();
+};
+window.tDelAsg = async function(id){
+  if(!confirm("이 과제를 삭제할까요?\n이미 제출된 영상 기록은 '자유 업로드' 목록으로 옮겨지고, 드라이브의 영상 파일은 그대로 남습니다.")) return;
+  const { error } = await sb.from("assignments").delete().eq("id", id);
   if(error) return alert(error.message);
   tPaneAssignments();
 };
