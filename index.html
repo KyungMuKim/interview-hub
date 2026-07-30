@@ -186,7 +186,7 @@ window.studentHome = function(tab){
 /* ---------- 자소서 ---------- */
 async function paneEssays(){
   const pane = document.getElementById("pane");
-  const { data: essays, error } = await sb.from("essays").select("*").eq("student_id", ME.id).order("updated_at",{ascending:false});
+  const { data: essays, error } = await sb.from("essays").select("*").eq("student_id", ME.id).is("deleted_at", null).order("updated_at",{ascending:false});
   if(error) err(error);
   pane.innerHTML = `
     <div class="sub">지원 학교별로 자소서를 만들고, 고칠 때마다 저장하세요. 이전 버전은 자동 보관됩니다.</div>
@@ -248,8 +248,8 @@ window.saveEssay = async function(essayId){
 };
 
 window.deleteEssay = async function(essayId){
-  if(!confirm("이 자소서를 삭제할까요? 보관된 버전도 함께 지워져요.")) return;
-  const { error } = await sb.from("essays").delete().eq("id", essayId);
+  if(!confirm("이 자소서를 내 목록에서 삭제할까요?\n(완전히 지워지지 않고, 필요하면 선생님이 복구해줄 수 있어요)")) return;
+  const { error } = await sb.from("essays").update({ deleted_at: new Date().toISOString() }).eq("id", essayId);
   if(error) err(error);
   studentHome("essay");
 };
@@ -487,12 +487,36 @@ async function tPaneEssays(){
   if(error) err(error);
   pane.innerHTML = `
     <div class="sub">학생이 마지막으로 저장한 순서입니다. 눌러서 열람·코멘트하세요.</div>
+    <div class="row" style="margin-bottom:6px"><button class="btn-ghost btn-sm" onclick="tBackup()">💾 전체 백업 내려받기 (자소서·제출기록 JSON)</button></div>
     ${essays.map(e=>`
       <div class="item clickable" onclick="tOpenEssay('${e.id}')">
-        <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""}</h4>
-        <div class="small">${e.content.length}자 · ${fmtDT(e.updated_at)}</div>
+        <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""} ${e.deleted_at?'<span class="badge b-none">학생이 삭제함</span>':""}</h4>
+        <div class="small">${e.content.length}자 · ${fmtDT(e.updated_at)} ${e.deleted_at?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation(); tRestoreEssay('${e.id}')">복구</button>`:""}</div>
       </div>`).join("") || '<div class="pill">아직 저장된 자소서가 없어요.</div>'}`;
 }
+window.tRestoreEssay = async function(id){
+  const { error } = await sb.from("essays").update({ deleted_at: null }).eq("id", id);
+  if(error) return alert(error.message);
+  teacherHome("essays");
+};
+window.tBackup = async function(){
+  const grab = async t => (await sb.from(t).select("*").limit(10000)).data || [];
+  const data = {
+    exported_at: new Date().toISOString(),
+    students: (await sb.from("students").select("id,name,track,interview_class,active")).data || [],
+    essays: await grab("essays"),
+    essay_revisions: await grab("essay_revisions"),
+    essay_comments: await grab("essay_comments"),
+    assignments: await grab("assignments"),
+    video_submissions: await grab("video_submissions"),
+    materials: await grab("materials")
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `면접반_백업_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+};
 
 window.tOpenEssay = async function(essayId){
   const [{ data: e, error: e1 }, { data: comments }, { data: revs }] = await Promise.all([
