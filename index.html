@@ -51,6 +51,10 @@
   .cnt{font-size:.82rem; color:var(--sub); text-align:right; margin-top:4px;}
   .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;}
   pre.essay-view{white-space:pre-wrap; font-family:inherit; font-size:.98rem; line-height:1.8; background:#f8fafc; border-radius:12px; padding:16px;}
+  body.wide{max-width:1200px;}
+  .split{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
+  .split .main{flex:2; min-width:320px;}
+  .split .side{flex:1; min-width:260px;}
 </style>
 </head>
 <body>
@@ -113,6 +117,7 @@ async function driveUpload(file, kind, studentName, onProgress){
 /* ================= 로그인 화면 ================= */
 async function home(){
   ME = null; sessionStorage.removeItem("ihub_me");
+  document.body.classList.remove("wide");
   app.innerHTML = `<div class="card"><h1>씨앤씨 면접반 🎤</h1><div class="sub">불러오는 중...</div></div>`;
   const { data: students, error } = await sb.from("students").select("*").eq("active", true).order("name");
   if(error) err(error);
@@ -165,6 +170,7 @@ window.pinGo = async function(student){
 /* ================= 학생 홈 ================= */
 window.studentHome = function(tab){
   if(!ME) return home();
+  document.body.classList.remove("wide");
   app.innerHTML = `
    <div class="card">
      <div class="topbar">
@@ -216,6 +222,7 @@ window.openEssay = async function(essayId){
     sb.from("essay_revisions").select("*",{count:"exact",head:true}).eq("essay_id", essayId)
   ]);
   if(e1) err(e1);
+  document.body.classList.add("wide");
   app.innerHTML = `
    <div class="card">
      <div class="topbar">
@@ -223,25 +230,40 @@ window.openEssay = async function(essayId){
        <button class="btn-ghost btn-sm" onclick="studentHome('essay')">← 목록</button>
      </div>
      <div class="small">마지막 저장 ${fmtDT(e.updated_at)} · 보관된 버전 ${revCount||0}개</div>
-     <textarea id="essayText">${esc(e.content)}</textarea>
-     <div class="cnt" id="cnt"></div>
-     <div class="row">
-       <button class="btn-primary" onclick="saveEssay('${e.id}')">💾 저장</button>
-       <button class="btn-ghost" onclick="essayHistory('${e.id}')">🕘 이전 버전</button>
-       <button class="btn-danger btn-sm" onclick="deleteEssay('${e.id}')">삭제</button>
+     <div class="split">
+       <div class="main">
+         <h3 style="margin-top:8px">📄 본문 <span class="small">(공식 글자수에 포함)</span></h3>
+         <textarea id="essayText">${esc(e.content)}</textarea>
+         <div class="cnt" id="cnt"></div>
+         <div class="row">
+           <button class="btn-primary" onclick="saveEssay('${e.id}')">💾 저장</button>
+           <button class="btn-ghost" onclick="essayHistory('${e.id}')">🕘 이전 버전</button>
+           <button class="btn-danger btn-sm" onclick="deleteEssay('${e.id}')">삭제</button>
+         </div>
+       </div>
+       <div class="side">
+         <h3 style="margin-top:8px">📦 백업 섹션 <span class="small">(글자수 미포함)</span></h3>
+         <div class="small" style="margin-bottom:4px">본문에서 뺀 문장·에피소드·부가정보를 버리지 말고 여기에 보관하세요. 선생님도 함께 봅니다.</div>
+         <textarea id="backupText" style="min-height:220px">${esc(e.backup_content||"")}</textarea>
+         <div class="cnt" id="bcnt"></div>
+         ${(comments&&comments.length)?`<h3>👨‍🏫 선생님 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)}</span></div>`).join("")}`:""}
+       </div>
      </div>
-     ${(comments&&comments.length)?`<h3>👨‍🏫 선생님 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)}</span></div>`).join("")}`:""}
    </div>`;
   const ta = document.getElementById("essayText"), cnt = document.getElementById("cnt");
+  const bt = document.getElementById("backupText"), bcnt = document.getElementById("bcnt");
   const upd = ()=>{ const t=ta.value; cnt.textContent = `공백 포함 ${t.length}자 · 공백 제외 ${t.replace(/\s/g,"").length}자`; };
+  const bupd = ()=>{ bcnt.textContent = `백업 ${bt.value.length}자 — 글자수에 안 들어가요`; };
   ta.addEventListener("input", upd); upd();
+  bt.addEventListener("input", bupd); bupd();
 };
 
 window.saveEssay = async function(essayId){
   const content = document.getElementById("essayText").value;
-  const { error: e1 } = await sb.from("essays").update({ content, updated_at: new Date().toISOString() }).eq("id", essayId);
+  const backup = (document.getElementById("backupText")||{value:""}).value;
+  const { error: e1 } = await sb.from("essays").update({ content, backup_content: backup, updated_at: new Date().toISOString() }).eq("id", essayId);
   if(e1) err(e1);
-  const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content });
+  const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content, backup_content: backup });
   if(e2) err(e2);
   alert("저장했어요! (이전 버전도 함께 보관됩니다)");
   openEssay(essayId);
@@ -276,6 +298,8 @@ window.restoreRev = async function(essayId, revId){
   await openEssay(essayId);
   document.getElementById("essayText").value = r.content;
   document.getElementById("essayText").dispatchEvent(new Event("input"));
+  const bt = document.getElementById("backupText");
+  if(bt){ bt.value = r.backup_content || ""; bt.dispatchEvent(new Event("input")); }
 };
 
 /* ---------- 영상 과제 ---------- */
@@ -398,6 +422,7 @@ window.teacherLogin = async function(){
 
 window.teacherHome = function(tab){
   if(!TPIN) return home();
+  document.body.classList.remove("wide");
   app.innerHTML = `
    <div class="card">
      <div class="topbar"><h1>👨‍🏫 선생님 모드</h1><button class="btn-ghost btn-sm" onclick="home()">나가기</button></div>
@@ -525,17 +550,28 @@ window.tOpenEssay = async function(essayId){
     sb.from("essay_revisions").select("id, saved_at").eq("essay_id", essayId).order("saved_at",{ascending:false})
   ]);
   if(e1) err(e1);
+  document.body.classList.add("wide");
   app.innerHTML = `
    <div class="card">
      <div class="topbar"><h2>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)}</h2>
        <button class="btn-ghost btn-sm" onclick="teacherHome('essays')">← 목록</button></div>
-     <div class="small">공백 포함 ${e.content.length}자 · 공백 제외 ${e.content.replace(/\s/g,"").length}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
-     <pre class="essay-view">${esc(e.content)||"(아직 내용이 없어요)"}</pre>
-     <h3>코멘트 남기기</h3>
-     <textarea id="cmt" style="min-height:110px" placeholder="학생 화면에 그대로 보입니다"></textarea>
-     <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button></div>
-     ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
+     <div class="small">본문 공백 포함 ${e.content.length}자 · 공백 제외 ${e.content.replace(/\s/g,"").length}자 · 백업 ${(e.backup_content||"").length}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
+     <div class="split">
+       <div class="main">
+         <pre class="essay-view">${esc(e.content)||"(아직 내용이 없어요)"}</pre>
+         ${e.backup_content?`<h3>📦 백업 섹션 <span class="small">(글자수 미포함)</span></h3><pre class="essay-view" style="background:#fffbeb">${esc(e.backup_content)}</pre>`:""}
+       </div>
+       <div class="side">
+         <h3 style="margin-top:8px">코멘트 남기기</h3>
+         <textarea id="cmt" style="min-height:110px" placeholder="Enter로 등록 · Shift+Enter 줄바꿈"></textarea>
+         <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button></div>
+         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
+       </div>
+     </div>
    </div>`;
+  const cmt = document.getElementById("cmt");
+  cmt.focus();
+  cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); tAddComment(e.id); } });
 };
 window.tAddComment = async function(essayId){
   const content = (document.getElementById("cmt").value||"").trim();
