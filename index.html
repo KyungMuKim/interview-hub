@@ -199,7 +199,7 @@ async function paneEssays(){
     ${essays.map(e=>`
       <div class="item clickable" onclick="openEssay('${e.id}')">
         <h4>${esc(e.school)} — ${esc(e.title)}</h4>
-        <div class="small">글자수 ${e.content.length}자(공백 포함) · 마지막 저장 ${fmtDT(e.updated_at)}</div>
+        <div class="small">글자수 ${(e.content+(e.content2||"")+(e.content3||"")).length}자(공백 포함) · 마지막 저장 ${fmtDT(e.updated_at)}</div>
       </div>`).join("") || '<div class="pill">아직 자소서가 없어요. 아래에서 새로 만들어 보세요.</div>'}
     <h3>새 자소서 만들기</h3>
     <input type="text" id="newSchool" placeholder="지원 학교 (예: 이화외고, 하나고, 공통)">
@@ -232,9 +232,16 @@ window.openEssay = async function(essayId){
      <div class="small">마지막 저장 ${fmtDT(e.updated_at)} · 보관된 버전 ${revCount||0}개</div>
      <div class="split">
        <div class="main">
-         <h3 style="margin-top:8px">📄 본문 <span class="small">(공식 글자수에 포함)</span></h3>
-         <textarea id="essayText">${esc(e.content)}</textarea>
+         <h3 style="margin-top:8px">① 자기주도학습 <span class="small">(공식 글자수 포함)</span></h3>
+         <textarea id="essayText" style="min-height:180px">${esc(e.content)}</textarea>
          <div class="cnt" id="cnt"></div>
+         <h3>② 지원동기·진로 <span class="small">(공식 글자수 포함)</span></h3>
+         <textarea id="essayText2" style="min-height:180px">${esc(e.content2||"")}</textarea>
+         <div class="cnt" id="cnt2"></div>
+         <h3>③ 인성 <span class="small">(공식 글자수 포함)</span></h3>
+         <textarea id="essayText3" style="min-height:180px">${esc(e.content3||"")}</textarea>
+         <div class="cnt" id="cnt3"></div>
+         <div class="cnt" id="cntTotal" style="font-weight:700"></div>
          <div class="row">
            <button class="btn-primary" onclick="saveEssay('${e.id}')">💾 저장</button>
            <button class="btn-ghost" onclick="essayHistory('${e.id}')">🕘 이전 버전</button>
@@ -251,19 +258,28 @@ window.openEssay = async function(essayId){
      </div>
    </div>`;
   const ta = document.getElementById("essayText"), cnt = document.getElementById("cnt");
+  const ta2 = document.getElementById("essayText2"), cnt2 = document.getElementById("cnt2");
+  const ta3 = document.getElementById("essayText3"), cnt3 = document.getElementById("cnt3");
   const bt = document.getElementById("backupText"), bcnt = document.getElementById("bcnt");
-  const upd = ()=>{ const t=ta.value; cnt.textContent = `공백 포함 ${t.length}자 · 공백 제외 ${t.replace(/\s/g,"").length}자`; };
+  const one = (t,c)=>{ c.textContent = `공백 포함 ${t.value.length}자 · 공백 제외 ${t.value.replace(/\s/g,"").length}자`; };
+  const upd = ()=>{
+    one(ta,cnt); one(ta2,cnt2); one(ta3,cnt3);
+    const all = ta.value + ta2.value + ta3.value;
+    document.getElementById("cntTotal").textContent = `본문 합계 — 공백 포함 ${all.length}자 · 공백 제외 ${all.replace(/\s/g,"").length}자`;
+  };
   const bupd = ()=>{ bcnt.textContent = `백업 ${bt.value.length}자 — 글자수에 안 들어가요`; };
-  ta.addEventListener("input", upd); upd();
+  [ta,ta2,ta3].forEach(x=>x.addEventListener("input", upd)); upd();
   bt.addEventListener("input", bupd); bupd();
 };
 
 window.saveEssay = async function(essayId){
   const content = document.getElementById("essayText").value;
+  const content2 = (document.getElementById("essayText2")||{value:""}).value;
+  const content3 = (document.getElementById("essayText3")||{value:""}).value;
   const backup = (document.getElementById("backupText")||{value:""}).value;
-  const { error: e1 } = await sb.from("essays").update({ content, backup_content: backup, updated_at: new Date().toISOString() }).eq("id", essayId);
+  const { error: e1 } = await sb.from("essays").update({ content, content2, content3, backup_content: backup, updated_at: new Date().toISOString() }).eq("id", essayId);
   if(e1) err(e1);
-  const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content, backup_content: backup });
+  const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content, content2, content3, backup_content: backup });
   if(e2) err(e2);
   alert("저장했어요! (이전 버전도 함께 보관됩니다)");
   openEssay(essayId);
@@ -284,7 +300,7 @@ window.essayHistory = async function(essayId){
      <div class="topbar"><h2>🕘 이전 버전</h2><button class="btn-ghost btn-sm" onclick="openEssay('${essayId}')">← 돌아가기</button></div>
      ${revs.map(r=>`
        <div class="item">
-         <div class="small">${fmtDT(r.saved_at)} · ${r.content.length}자</div>
+         <div class="small">${fmtDT(r.saved_at)} · ${(r.content+(r.content2||"")+(r.content3||"")).length}자</div>
          <pre class="essay-view" style="max-height:130px; overflow:hidden; margin-top:6px">${esc(r.content.slice(0,300))}${r.content.length>300?"…":""}</pre>
          <div class="row"><button class="btn-ghost btn-sm" onclick="restoreRev('${essayId}','${r.id}')">이 버전 불러오기</button></div>
        </div>`).join("") || '<div class="pill">보관된 버전이 아직 없어요.</div>'}
@@ -297,6 +313,8 @@ window.restoreRev = async function(essayId, revId){
   if(!confirm("이 버전 내용을 편집창으로 불러올까요? (저장을 눌러야 확정돼요)")) return;
   await openEssay(essayId);
   document.getElementById("essayText").value = r.content;
+  const t2 = document.getElementById("essayText2"); if(t2) t2.value = r.content2 || "";
+  const t3 = document.getElementById("essayText3"); if(t3) t3.value = r.content3 || "";
   document.getElementById("essayText").dispatchEvent(new Event("input"));
   const bt = document.getElementById("backupText");
   if(bt){ bt.value = r.backup_content || ""; bt.dispatchEvent(new Event("input")); }
@@ -516,7 +534,7 @@ async function tPaneEssays(){
     ${essays.map(e=>`
       <div class="item clickable" onclick="tOpenEssay('${e.id}')">
         <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""} ${e.deleted_at?'<span class="badge b-none">학생이 삭제함</span>':""}</h4>
-        <div class="small">${e.content.length}자 · ${fmtDT(e.updated_at)} ${e.deleted_at?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation(); tRestoreEssay('${e.id}')">복구</button>`:""}</div>
+        <div class="small">${(e.content+(e.content2||"")+(e.content3||"")).length}자 · ${fmtDT(e.updated_at)} ${e.deleted_at?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation(); tRestoreEssay('${e.id}')">복구</button>`:""}</div>
       </div>`).join("") || '<div class="pill">아직 저장된 자소서가 없어요.</div>'}`;
 }
 window.tRestoreEssay = async function(id){
@@ -551,14 +569,20 @@ window.tOpenEssay = async function(essayId){
   ]);
   if(e1) err(e1);
   document.body.classList.add("wide");
+  const total = e.content + (e.content2||"") + (e.content3||"");
   app.innerHTML = `
    <div class="card">
      <div class="topbar"><h2>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)}</h2>
        <button class="btn-ghost btn-sm" onclick="teacherHome('essays')">← 목록</button></div>
-     <div class="small">본문 공백 포함 ${e.content.length}자 · 공백 제외 ${e.content.replace(/\s/g,"").length}자 · 백업 ${(e.backup_content||"").length}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
+     <div class="small">본문 합계 공백 포함 ${total.length}자 · 공백 제외 ${total.replace(/\s/g,"").length}자 (① ${e.content.length} · ② ${(e.content2||"").length} · ③ ${(e.content3||"").length}) · 백업 ${(e.backup_content||"").length}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
      <div class="split">
        <div class="main">
-         <pre class="essay-view">${esc(e.content)||"(아직 내용이 없어요)"}</pre>
+         <h3 style="margin-top:8px">① 자기주도학습</h3>
+         <pre class="essay-view">${esc(e.content)||"(비어 있음)"}</pre>
+         <h3>② 지원동기·진로</h3>
+         <pre class="essay-view">${esc(e.content2||"")||"(비어 있음)"}</pre>
+         <h3>③ 인성</h3>
+         <pre class="essay-view">${esc(e.content3||"")||"(비어 있음)"}</pre>
          ${e.backup_content?`<h3>📦 백업 섹션 <span class="small">(글자수 미포함)</span></h3><pre class="essay-view" style="background:#fffbeb">${esc(e.backup_content)}</pre>`:""}
        </div>
        <div class="side">
