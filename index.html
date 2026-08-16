@@ -78,6 +78,7 @@ let PINLIST = null;     // 선생님용 학생·PIN 목록
 
 /* ================= 유틸 ================= */
 const esc = s => String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nc = t => String(t||"").replace(/\s/g,"").length; // 글자수 = 공백 제외
 const err = e => { app.innerHTML = `<div class="card"><h2>오류</h2><div class="flag red">${esc(e.message||e)}</div><div class="row"><button class="btn-ghost" onclick="home()">← 처음으로</button></div></div>`; throw e; };
 const fmtDT = t => { const d=new Date(t); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
 const fmtD = t => t ? String(t).slice(0,10).replace(/-/g,".") : "";
@@ -199,7 +200,7 @@ async function paneEssays(){
     ${essays.map(e=>`
       <div class="item clickable" onclick="openEssay('${e.id}')">
         <h4>${esc(e.school)} — ${esc(e.title)}</h4>
-        <div class="small">글자수 ${(e.content+(e.content2||"")+(e.content3||"")).length}자(공백 포함) · 마지막 저장 ${fmtDT(e.updated_at)}</div>
+        <div class="small">글자수 ${nc(e.content)+nc(e.content2)+nc(e.content3)}자(공백 제외) · 마지막 저장 ${fmtDT(e.updated_at)}</div>
       </div>`).join("") || '<div class="pill">아직 자소서가 없어요. 아래에서 새로 만들어 보세요.</div>'}
     <h3>새 자소서 만들기</h3>
     <input type="text" id="newSchool" placeholder="지원 학교 (예: 이화외고, 하나고, 공통)">
@@ -261,13 +262,12 @@ window.openEssay = async function(essayId){
   const ta2 = document.getElementById("essayText2"), cnt2 = document.getElementById("cnt2");
   const ta3 = document.getElementById("essayText3"), cnt3 = document.getElementById("cnt3");
   const bt = document.getElementById("backupText"), bcnt = document.getElementById("bcnt");
-  const one = (t,c)=>{ c.textContent = `공백 포함 ${t.value.length}자 · 공백 제외 ${t.value.replace(/\s/g,"").length}자`; };
+  const one = (t,c)=>{ c.textContent = `${nc(t.value)}자 (공백 제외)`; };
   const upd = ()=>{
     one(ta,cnt); one(ta2,cnt2); one(ta3,cnt3);
-    const all = ta.value + ta2.value + ta3.value;
-    document.getElementById("cntTotal").textContent = `본문 합계 — 공백 포함 ${all.length}자 · 공백 제외 ${all.replace(/\s/g,"").length}자`;
+    document.getElementById("cntTotal").textContent = `본문 합계 ${nc(ta.value)+nc(ta2.value)+nc(ta3.value)}자 (공백 제외)`;
   };
-  const bupd = ()=>{ bcnt.textContent = `백업 ${bt.value.length}자 — 글자수에 안 들어가요`; };
+  const bupd = ()=>{ bcnt.textContent = `백업 ${nc(bt.value)}자 — 글자수에 안 들어가요`; };
   [ta,ta2,ta3].forEach(x=>x.addEventListener("input", upd)); upd();
   bt.addEventListener("input", bupd); bupd();
 };
@@ -300,7 +300,7 @@ window.essayHistory = async function(essayId){
      <div class="topbar"><h2>🕘 이전 버전</h2><button class="btn-ghost btn-sm" onclick="openEssay('${essayId}')">← 돌아가기</button></div>
      ${revs.map(r=>`
        <div class="item">
-         <div class="small">${fmtDT(r.saved_at)} · ${(r.content+(r.content2||"")+(r.content3||"")).length}자</div>
+         <div class="small">${fmtDT(r.saved_at)} · ${nc(r.content)+nc(r.content2)+nc(r.content3)}자</div>
          <pre class="essay-view" style="max-height:130px; overflow:hidden; margin-top:6px">${esc(r.content.slice(0,300))}${r.content.length>300?"…":""}</pre>
          <div class="row"><button class="btn-ghost btn-sm" onclick="restoreRev('${essayId}','${r.id}')">이 버전 불러오기</button></div>
        </div>`).join("") || '<div class="pill">보관된 버전이 아직 없어요.</div>'}
@@ -534,7 +534,7 @@ async function tPaneEssays(){
     ${essays.map(e=>`
       <div class="item clickable" onclick="tOpenEssay('${e.id}')">
         <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""} ${e.deleted_at?'<span class="badge b-none">학생이 삭제함</span>':""}</h4>
-        <div class="small">${(e.content+(e.content2||"")+(e.content3||"")).length}자 · ${fmtDT(e.updated_at)} ${e.deleted_at?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation(); tRestoreEssay('${e.id}')">복구</button>`:""}</div>
+        <div class="small">${nc(e.content)+nc(e.content2)+nc(e.content3)}자 · ${fmtDT(e.updated_at)} ${e.deleted_at?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation(); tRestoreEssay('${e.id}')">복구</button>`:""}</div>
       </div>`).join("") || '<div class="pill">아직 저장된 자소서가 없어요.</div>'}`;
 }
 window.tRestoreEssay = async function(id){
@@ -569,12 +569,11 @@ window.tOpenEssay = async function(essayId){
   ]);
   if(e1) err(e1);
   document.body.classList.add("wide");
-  const total = e.content + (e.content2||"") + (e.content3||"");
   app.innerHTML = `
    <div class="card">
      <div class="topbar"><h2>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)}</h2>
        <button class="btn-ghost btn-sm" onclick="teacherHome('essays')">← 목록</button></div>
-     <div class="small">본문 합계 공백 포함 ${total.length}자 · 공백 제외 ${total.replace(/\s/g,"").length}자 (① ${e.content.length} · ② ${(e.content2||"").length} · ③ ${(e.content3||"").length}) · 백업 ${(e.backup_content||"").length}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
+     <div class="small">본문 합계 ${nc(e.content)+nc(e.content2)+nc(e.content3)}자 (① ${nc(e.content)} · ② ${nc(e.content2)} · ③ ${nc(e.content3)} · 공백 제외) · 백업 ${nc(e.backup_content)}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
      <div class="split">
        <div class="main">
          <h3 style="margin-top:8px">① 자기주도학습</h3>
