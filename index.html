@@ -55,6 +55,11 @@
   .split{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
   .split .main{flex:2; min-width:320px;}
   .split .side{flex:1; min-width:260px;}
+  .quote{background:#fef3c7; border-left:3px solid #d97706; padding:6px 10px; margin:6px 0; font-size:.88rem; line-height:1.55; white-space:pre-wrap; border-radius:6px;}
+  .quote.gone{background:#f1f5f9; border-left-color:#94a3b8; color:#64748b;}
+  mark.hl{background:#fde68a; border-radius:3px; padding:0 2px;}
+  pre.essay-view.selectable{cursor:text; user-select:text;}
+  pre.essay-view.selectable::selection, pre.essay-view.selectable *::selection{background:#fde68a;}
 </style>
 </head>
 <body>
@@ -94,7 +99,14 @@ const forMe = (row, st) => row.target==="전체" || !st.interview_class || row.t
 const PART_LABEL = { "1":"① 자기주도학습", "2":"② 지원동기·진로", "3":"③ 인성", "backup":"📦 백업", "all":"전체" };
 const partBadge = p => `<span class="badge ${p==="all"?"b-none":"b-oego"}">${PART_LABEL[p]||"전체"}</span>`;
 /* 학생 화면 코멘트 카드 (확인/반영 버튼 포함) */
-const stuComment = c => `<div class="comment" id="cm-${c.id}">${partBadge(c.part||"all")}<div style="margin-top:6px">${esc(c.content)}</div>
+const quoteBox = (c, editable) => {
+  if(!c.quote) return "";
+  const src = editable ? (partText(c.part)||"") : (window._essayTexts||{})[c.part]||"";
+  const found = src.indexOf(c.quote) >= 0;
+  return `<div class="quote ${found?"":"gone"}">${found?"":"<b>원문이 수정됨 · </b>"}“${esc(c.quote)}”${found&&editable?` <button class="btn-ghost btn-sm" style="padding:2px 6px" onclick="findQuote('${c.part}', ${JSON.stringify(c.quote).replace(/"/g,"&quot;")})">본문에서 찾기</button>`:""}</div>`;
+};
+const partText = p => { const el = document.getElementById(p==="1"?"essayText":p==="2"?"essayText2":p==="3"?"essayText3":p==="backup"?"backupText":""); return el ? el.value : ""; };
+const stuComment = c => `<div class="comment" id="cm-${c.id}">${partBadge(c.part||"all")}${quoteBox(c, true)}<div style="margin-top:6px">${esc(c.content)}</div>
   <span class="small">${fmtDT(c.created_at)}
     ${c.student_status==="applied"?'<b style="color:#166534">✅ 반영했어요</b>':c.student_status==="seen"?'<b style="color:#1d4ed8">👀 확인했어요</b> <button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'applied\')">반영했어요</button>':'<button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'seen\')">확인했어요</button> <button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'applied\')">반영했어요</button>'}
   </span></div>`;
@@ -285,6 +297,16 @@ window.openEssay = async function(essayId){
   bt.addEventListener("input", bupd); bupd();
 };
 
+window.findQuote = function(part, q){
+  const id = part==="1"?"essayText":part==="2"?"essayText2":part==="3"?"essayText3":"backupText";
+  const ta = document.getElementById(id); if(!ta) return;
+  const i = ta.value.indexOf(q); if(i<0) return alert("본문에서 이 문장을 찾을 수 없어요 (수정된 것 같아요)");
+  ta.focus(); ta.setSelectionRange(i, i+q.length);
+  // 선택 위치로 스크롤
+  const before = ta.value.slice(0,i); const lines = before.split("\n").length;
+  ta.scrollTop = Math.max(0, (lines-3) * 27);
+  ta.scrollIntoView({behavior:"smooth", block:"center"});
+};
 window.markComment = async function(id, status){
   const { error } = await sb.from("essay_comments").update({ student_status: status, student_status_at: new Date().toISOString() }).eq("id", id);
   if(error) return alert(error.message);
@@ -602,13 +624,14 @@ window.tOpenEssay = async function(essayId){
      <div class="small">본문 합계 ${nc(e.content)+nc(e.content2)+nc(e.content3)}자 (① ${nc(e.content)} · ② ${nc(e.content2)} · ③ ${nc(e.content3)} · 공백 제외) · 백업 ${nc(e.backup_content)}자 · 저장 ${revs?.length||0}회 · 마지막 ${fmtDT(e.updated_at)}</div>
      <div class="split">
        <div class="main">
+         <div class="small" style="margin-bottom:4px">💡 본문에서 문장을 <b>드래그</b>하면 그 부분이 코멘트에 인용됩니다.</div>
          <h3 style="margin-top:8px">① 자기주도학습</h3>
-         <pre class="essay-view">${esc(e.content)||"(비어 있음)"}</pre>
+         <pre class="essay-view selectable" data-part="1">${esc(e.content)||"(비어 있음)"}</pre>
          <h3>② 지원동기·진로</h3>
-         <pre class="essay-view">${esc(e.content2||"")||"(비어 있음)"}</pre>
+         <pre class="essay-view selectable" data-part="2">${esc(e.content2||"")||"(비어 있음)"}</pre>
          <h3>③ 인성</h3>
-         <pre class="essay-view">${esc(e.content3||"")||"(비어 있음)"}</pre>
-         ${e.backup_content?`<h3>📦 백업 섹션 <span class="small">(글자수 미포함)</span></h3><pre class="essay-view" style="background:#fffbeb">${esc(e.backup_content)}</pre>`:""}
+         <pre class="essay-view selectable" data-part="3">${esc(e.content3||"")||"(비어 있음)"}</pre>
+         ${e.backup_content?`<h3>📦 백업 섹션 <span class="small">(글자수 미포함)</span></h3><pre class="essay-view selectable" data-part="backup" style="background:#fffbeb">${esc(e.backup_content)}</pre>`:""}
        </div>
        <div class="side">
          <h3 style="margin-top:8px">코멘트 남기기</h3>
@@ -619,18 +642,42 @@ window.tOpenEssay = async function(essayId){
            <option value="backup">📦 백업 섹션</option>
            <option value="all">전체 (자소서 전반)</option>
          </select>
+         <div id="quoteBox" class="small" style="margin:6px 0"></div>
          <div id="tplBox" class="small" style="margin:6px 0"></div>
          <textarea id="cmt" style="min-height:110px" placeholder="Enter로 등록 · Shift+Enter 줄바꿈"></textarea>
          <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button>
            <button class="btn-ghost btn-sm" onclick="tSaveTemplate()">＋ 이 문구를 템플릿으로</button></div>
-         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}<div style="margin-top:6px">${esc(c.content)}</div><span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
+         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${quoteBox(c,false)}<div style="margin-top:6px">${esc(c.content)}</div><span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
        </div>
      </div>
    </div>`;
+  window._essayTexts = { "1": e.content||"", "2": e.content2||"", "3": e.content3||"", "backup": e.backup_content||"" };
+  window._quote = null;
   const cmt = document.getElementById("cmt");
   cmt.focus();
   cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); tAddComment(e.id); } });
   tRenderTemplates();
+  // 드래그 선택 → 인용
+  document.querySelectorAll("pre.essay-view.selectable").forEach(pre=>{
+    pre.addEventListener("mouseup", ()=>{
+      const sel = window.getSelection(); const txt = sel ? sel.toString().trim() : "";
+      if(!txt || txt.length < 2) return;
+      // 선택이 이 pre 안에서만 이루어졌는지
+      if(!sel.anchorNode || !pre.contains(sel.anchorNode) || !pre.contains(sel.focusNode)) return;
+      tSetQuote(pre.dataset.part, txt);
+    });
+  });
+};
+window.tSetQuote = function(part, txt){
+  window._quote = { part, text: txt };
+  const sel = document.getElementById("cmtPart"); if(sel) sel.value = part;
+  const box = document.getElementById("quoteBox");
+  if(box) box.innerHTML = `<div class="quote">인용: “${esc(txt.length>140?txt.slice(0,140)+"…":txt)}” <button class="btn-ghost btn-sm" style="padding:2px 6px" onclick="tClearQuote()">✕ 인용 취소</button></div>`;
+  document.getElementById("cmt").focus();
+};
+window.tClearQuote = function(){
+  window._quote = null;
+  const box = document.getElementById("quoteBox"); if(box) box.innerHTML = "";
 };
 /* 피드백 템플릿 */
 window.tRenderTemplates = async function(){
@@ -666,7 +713,8 @@ window.tAddComment = async function(essayId){
   const content = (document.getElementById("cmt").value||"").trim();
   if(!content) return alert("내용을 입력하세요");
   const part = (document.getElementById("cmtPart")||{value:"all"}).value;
-  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content, part });
+  const quote = (window._quote && window._quote.part===part) ? window._quote.text : null;
+  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content, part, quote });
   if(error) return alert(error.message);
   tOpenEssay(essayId);
 };
