@@ -90,6 +90,15 @@ const mb = b => b ? (b/1024/1024).toFixed(1)+"MB" : "-";
 const isInterview = s => s.track==="interview" || s.track==="both";
 /* 대상 필터: 분반 미지정 학생에게는 전부 보여줌 */
 const forMe = (row, st) => row.target==="전체" || !st.interview_class || row.target===st.interview_class;
+/* 코멘트 파트 라벨 */
+const PART_LABEL = { "1":"① 자기주도학습", "2":"② 지원동기·진로", "3":"③ 인성", "backup":"📦 백업", "all":"전체" };
+const partBadge = p => `<span class="badge ${p==="all"?"b-none":"b-oego"}">${PART_LABEL[p]||"전체"}</span>`;
+/* 학생 화면 코멘트 카드 (확인/반영 버튼 포함) */
+const stuComment = c => `<div class="comment" id="cm-${c.id}">${partBadge(c.part||"all")}<div style="margin-top:6px">${esc(c.content)}</div>
+  <span class="small">${fmtDT(c.created_at)}
+    ${c.student_status==="applied"?'<b style="color:#166534">✅ 반영했어요</b>':c.student_status==="seen"?'<b style="color:#1d4ed8">👀 확인했어요</b> <button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'applied\')">반영했어요</button>':'<button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'seen\')">확인했어요</button> <button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'applied\')">반영했어요</button>'}
+  </span></div>`;
+const commentsFor = (list, part) => (list||[]).filter(c=>(c.part||"all")===part).map(stuComment).join("");
 
 /* ================= Apps Script 업로드 ================= */
 async function gsPost(body){
@@ -236,12 +245,15 @@ window.openEssay = async function(essayId){
          <h3 style="margin-top:8px">① 자기주도학습 <span class="small">(공식 글자수 포함)</span></h3>
          <textarea id="essayText" style="min-height:180px">${esc(e.content)}</textarea>
          <div class="cnt" id="cnt"></div>
+         ${commentsFor(comments,"1")}
          <h3>② 지원동기·진로 <span class="small">(공식 글자수 포함)</span></h3>
          <textarea id="essayText2" style="min-height:180px">${esc(e.content2||"")}</textarea>
          <div class="cnt" id="cnt2"></div>
+         ${commentsFor(comments,"2")}
          <h3>③ 인성 <span class="small">(공식 글자수 포함)</span></h3>
          <textarea id="essayText3" style="min-height:180px">${esc(e.content3||"")}</textarea>
          <div class="cnt" id="cnt3"></div>
+         ${commentsFor(comments,"3")}
          <div class="cnt" id="cntTotal" style="font-weight:700"></div>
          <div class="row">
            <button class="btn-primary" onclick="saveEssay('${e.id}')">💾 저장</button>
@@ -254,7 +266,8 @@ window.openEssay = async function(essayId){
          <div class="small" style="margin-bottom:4px">본문에서 뺀 문장·에피소드·부가정보를 버리지 말고 여기에 보관하세요. 선생님도 함께 봅니다.</div>
          <textarea id="backupText" style="min-height:220px">${esc(e.backup_content||"")}</textarea>
          <div class="cnt" id="bcnt"></div>
-         ${(comments&&comments.length)?`<h3>👨‍🏫 선생님 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)}</span></div>`).join("")}`:""}
+         ${commentsFor(comments,"backup")}
+         ${commentsFor(comments,"all")?`<h3>👨‍🏫 선생님 코멘트 (전체)</h3>${commentsFor(comments,"all")}`:""}
        </div>
      </div>
    </div>`;
@@ -272,6 +285,13 @@ window.openEssay = async function(essayId){
   bt.addEventListener("input", bupd); bupd();
 };
 
+window.markComment = async function(id, status){
+  const { error } = await sb.from("essay_comments").update({ student_status: status, student_status_at: new Date().toISOString() }).eq("id", id);
+  if(error) return alert(error.message);
+  const { data: c } = await sb.from("essay_comments").select("*").eq("id", id).single();
+  const el = document.getElementById("cm-"+id);
+  if(el && c){ el.outerHTML = stuComment(c); }
+};
 window.saveEssay = async function(essayId){
   const content = document.getElementById("essayText").value;
   const content2 = (document.getElementById("essayText2")||{value:""}).value;
@@ -526,14 +546,19 @@ window.copyPinMsg = function(){
 /* ---------- 자소서 열람·코멘트 ---------- */
 async function tPaneEssays(){
   const pane = document.getElementById("pane");
-  const { data: essays, error } = await sb.from("essays").select("*, students(name, interview_class)").order("updated_at",{ascending:false});
+  const [{ data: essays, error }, { data: allC }] = await Promise.all([
+    sb.from("essays").select("*, students(name, interview_class)").order("updated_at",{ascending:false}),
+    sb.from("essay_comments").select("essay_id, student_status")
+  ]);
   if(error) err(error);
+  const stat = {}; (allC||[]).forEach(c=>{ const o=stat[c.essay_id]||(stat[c.essay_id]={n:0,unseen:0,applied:0}); o.n++; if(!c.student_status) o.unseen++; if(c.student_status==="applied") o.applied++; });
+  const cBadge = id => { const o=stat[id]; if(!o||!o.n) return ""; return o.unseen?`<span class="badge b-jasa">미확인 ${o.unseen}</span>`:o.applied===o.n?`<span class="badge b-eng">전부 반영</span>`:`<span class="badge b-none">확인 ${o.n-o.unseen}/${o.n}</span>`; };
   pane.innerHTML = `
     <div class="sub">학생이 마지막으로 저장한 순서입니다. 눌러서 열람·코멘트하세요.</div>
     <div class="row" style="margin-bottom:6px"><button class="btn-ghost btn-sm" onclick="tBackup()">💾 전체 백업 내려받기 (자소서·제출기록 JSON)</button></div>
     ${essays.map(e=>`
       <div class="item clickable" onclick="tOpenEssay('${e.id}')">
-        <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""} ${e.deleted_at?'<span class="badge b-none">학생이 삭제함</span>':""}</h4>
+        <h4>${esc(e.students?.name)} — ${esc(e.school)} · ${esc(e.title)} ${e.students?.interview_class?classBadge(e.students):""} ${e.deleted_at?'<span class="badge b-none">학생이 삭제함</span>':""} ${cBadge(e.id)}</h4>
         <div class="small">${nc(e.content)+nc(e.content2)+nc(e.content3)}자 · ${fmtDT(e.updated_at)} ${e.deleted_at?`<button class="btn-ghost btn-sm" onclick="event.stopPropagation(); tRestoreEssay('${e.id}')">복구</button>`:""}</div>
       </div>`).join("") || '<div class="pill">아직 저장된 자소서가 없어요.</div>'}`;
 }
@@ -550,6 +575,7 @@ window.tBackup = async function(){
     essays: await grab("essays"),
     essay_revisions: await grab("essay_revisions"),
     essay_comments: await grab("essay_comments"),
+    comment_templates: await grab("comment_templates"),
     assignments: await grab("assignments"),
     video_submissions: await grab("video_submissions"),
     materials: await grab("materials")
@@ -586,20 +612,61 @@ window.tOpenEssay = async function(essayId){
        </div>
        <div class="side">
          <h3 style="margin-top:8px">코멘트 남기기</h3>
+         <select id="cmtPart" style="width:100%">
+           <option value="1">① 자기주도학습</option>
+           <option value="2">② 지원동기·진로</option>
+           <option value="3">③ 인성</option>
+           <option value="backup">📦 백업 섹션</option>
+           <option value="all">전체 (자소서 전반)</option>
+         </select>
+         <div id="tplBox" class="small" style="margin:6px 0"></div>
          <textarea id="cmt" style="min-height:110px" placeholder="Enter로 등록 · Shift+Enter 줄바꿈"></textarea>
-         <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button></div>
-         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${esc(c.content)}<span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
+         <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button>
+           <button class="btn-ghost btn-sm" onclick="tSaveTemplate()">＋ 이 문구를 템플릿으로</button></div>
+         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}<div style="margin-top:6px">${esc(c.content)}</div><span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
        </div>
      </div>
    </div>`;
   const cmt = document.getElementById("cmt");
   cmt.focus();
   cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); tAddComment(e.id); } });
+  tRenderTemplates();
+};
+/* 피드백 템플릿 */
+window.tRenderTemplates = async function(){
+  const box = document.getElementById("tplBox"); if(!box) return;
+  const { data: tpls } = await sb.from("comment_templates").select("*").order("uses",{ascending:false}).order("created_at");
+  window._tpls = tpls||[];
+  box.innerHTML = window._tpls.length
+    ? `자주 쓰는 문구: ${window._tpls.map(t=>`<button class="btn-ghost btn-sm" style="margin:2px" title="${esc(t.content)}" onclick="tUseTemplate('${t.id}')">${esc(t.label)}</button><button class="btn-ghost btn-sm" style="margin:2px 6px 2px 0; padding:4px 6px" onclick="tDelTemplate('${t.id}')" title="템플릿 삭제">×</button>`).join("")}`
+    : `<span class="small">템플릿 없음 — 코멘트를 쓰고 "＋ 이 문구를 템플릿으로"를 누르면 저장됩니다.</span>`;
+};
+window.tUseTemplate = async function(id){
+  const t = (window._tpls||[]).find(x=>x.id===id); if(!t) return;
+  const ta = document.getElementById("cmt");
+  ta.value = (ta.value ? ta.value.replace(/\s*$/,"") + "\n" : "") + t.content;
+  ta.focus();
+  sb.from("comment_templates").update({ uses: (t.uses||0)+1 }).eq("id", id).then(()=>{});
+};
+window.tSaveTemplate = async function(){
+  const content = (document.getElementById("cmt").value||"").trim();
+  if(!content) return alert("먼저 코멘트 칸에 문구를 쓰세요");
+  const label = prompt("템플릿 버튼에 표시할 짧은 이름", content.slice(0,12));
+  if(label===null) return;
+  const { error } = await sb.from("comment_templates").insert({ label: label.trim()||content.slice(0,12), content });
+  if(error) return alert(error.message);
+  tRenderTemplates();
+};
+window.tDelTemplate = async function(id){
+  if(!confirm("이 템플릿을 삭제할까요?")) return;
+  await sb.from("comment_templates").delete().eq("id", id);
+  tRenderTemplates();
 };
 window.tAddComment = async function(essayId){
   const content = (document.getElementById("cmt").value||"").trim();
   if(!content) return alert("내용을 입력하세요");
-  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content });
+  const part = (document.getElementById("cmtPart")||{value:"all"}).value;
+  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content, part });
   if(error) return alert(error.message);
   tOpenEssay(essayId);
 };
