@@ -120,20 +120,89 @@ async function gsPost(body){
   return j;
 }
 const blobB64 = blob => new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(String(r.result).split(",")[1]); r.onerror=no; r.readAsDataURL(blob); });
-async function driveUpload(file, kind, studentName, onProgress){
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+/* 이어올리기 키(같은 파일을 다시 고르면 끊긴 지점부터) — GitHub Pages라 localStorage 사용 가능 */
+const upKey = (kind, name, f) => `up_${kind}_${name}_${f.name}_${f.size}_${f.lastModified}`;
+const upLoad = k => { try{ const v = JSON.parse(localStorage.getItem(k)||"null"); return (v && Date.now()-v.ts < 6*3600*1000) ? v : null; }catch(e){ return null; } };
+const upSave = (k, v) => { try{ localStorage.setItem(k, JSON.stringify({...v, ts:Date.now()})); }catch(e){} };
+const upDrop = k => { try{ localStorage.removeItem(k); }catch(e){} };
+const isSessionGone = m => /만료|세션|not found|404|410/i.test(String(m||""));
+const isBusy = m => /too many|동시|429|503|rate|잠시/i.test(String(m||""));
+
+/* 서버에 "지금까지 몇 바이트 받았나" 물어봄 → {received} 또는 {done,fileId,link} */
+async function upStatus(uploadId, total){
+  try{ return await gsPost({ action:"status", uploadId, total }); }
+  catch(e){ if(/알 수 없는 action/.test(e.message)) return null; throw e; } // 구버전 서버 → 이어올리기 없이 진행
+}
+
+async function driveUpload(file, kind, studentName, onProgress, onStatus){
   if(!CONFIG.APPS_SCRIPT_URL) throw new Error("업로드 서버가 아직 연결되지 않았어요. 선생님께 알려주세요.");
   if(!file.size) throw new Error("빈 파일이에요.");
-  const init = await gsPost({ action:"init", kind, student:studentName, filename:file.name, mimeType:file.type||"application/octet-stream", size:file.size });
-  let off = 0, res = null;
+  const key = upKey(kind, studentName, file);
+  const say = m => { if(onStatus) onStatus(m); };
+  let uploadId = null, off = 0, res = null;
+
+  // ① 이어올리기: 이전에 중단된 같은 파일이면 서버 오프셋부터
+  const prev = upLoad(key);
+  if(prev && prev.uploadId){
+    try{
+      const st = await upStatus(prev.uploadId, file.size);
+      if(st && st.done){ upDrop(key); return st; }
+      if(st && typeof st.received === "number" && st.received > 0 && st.received < file.size){
+        uploadId = prev.uploadId; off = st.received;
+        say(`이전 업로드를 ${Math.round(off/file.size*100)}%부터 이어서 올려요`);
+      }
+    }catch(e){ /* 상태 조회 실패 → 새로 시작 */ }
+  }
+  if(!uploadId){
+    const init = await gsPost({ action:"init", kind, student:studentName, filename:file.name, mimeType:file.type||"application/octet-stream", size:file.size });
+    uploadId = init.uploadId; off = 0;
+    upSave(key, { uploadId });
+  }
+
+  // ② 조각별 자동 재시도(최대 5회, 대기 2·5·10·20·30초) + 실패 시 서버 오프셋으로 재정렬
+  const WAITS = [2000, 5000, 10000, 20000, 30000];
+  let fails = 0;
   while(off < file.size){
     const slice = file.slice(off, Math.min(off+CONFIG.CHUNK, file.size));
     const b64 = await blobB64(slice);
-    res = await gsPost({ action:"chunk", uploadId:init.uploadId, offset:off, total:file.size, dataB64:b64 });
-    off += slice.size;
+    try{
+      res = await gsPost({ action:"chunk", uploadId, offset:off, total:file.size, dataB64:b64 });
+      off += slice.size; fails = 0; say("");
+    }catch(e){
+      if(isSessionGone(e.message)){ upDrop(key); throw new Error("업로드 세션이 만료됐어요. '업로드 시작'을 다시 눌러 처음부터 올려주세요."); }
+      if(fails >= WAITS.length){
+        // 재시도 소진 → 중단(이어올리기 정보는 남겨둠)
+        throw new Error("연결이 계속 끊겨요. 잠시 후 같은 파일을 다시 선택하고 '업로드 시작'을 누르면 끊긴 지점부터 이어서 올라가요. (" + (e.message||e) + ")");
+      }
+      const w = WAITS[fails] * (isBusy(e.message) ? 2 : 1);   // ④ 서버 혼잡(동시 접속 초과)이면 더 길게 대기
+      fails++;
+      say(`네트워크 오류 — ${Math.round(w/1000)}초 후 재시도 (${fails}/${WAITS.length})`);
+      await sleep(w);
+      // 서버가 이미 받은 조각일 수 있으니 오프셋 재확인 후 계속
+      try{
+        const st = await upStatus(uploadId, file.size);
+        if(st && st.done){ res = st; off = file.size; }
+        else if(st && typeof st.received === "number") off = st.received;
+      }catch(e2){}
+    }
     if(onProgress) onProgress(Math.min(100, Math.round(off/file.size*100)));
   }
-  if(!res || !res.done) throw new Error("업로드가 완료되지 않았어요. 다시 시도하세요.");
+  if(!res || !res.done){
+    const st = await upStatus(uploadId, file.size).catch(()=>null);
+    if(st && st.done) res = st;
+  }
+  if(!res || !res.done) throw new Error("업로드가 완료되지 않았어요. 같은 파일을 다시 선택하면 이어서 올라가요.");
+  upDrop(key);
   return res; // {fileId, link}
+}
+
+/* ③ 큰 파일 사전 안내(1GB 초과 시 확인) — 대략 분당 60~100MB 기준 */
+function bigFileOk(f){
+  const GB = f.size/1024/1024/1024;
+  if(GB < 1) return true;
+  const min = Math.round(f.size/1024/1024/70);
+  return confirm(`파일이 ${GB.toFixed(1)}GB예요. 업로드에 약 ${min}분 이상 걸릴 수 있어요.\n\n· 와이파이에서, 화면을 끄지 말고 올려주세요\n· 중간에 끊겨도 같은 파일을 다시 선택하면 이어서 올라가요\n· 가능하면 1080p·5분 이내로 촬영/압축하면 훨씬 빨라요\n\n지금 계속 올릴까요?`);
 }
 
 /* ================= 로그인 화면 ================= */
@@ -398,7 +467,7 @@ window.uploadUI = function(assignmentId){
   app.innerHTML = `
    <div class="card">
      <div class="topbar"><h2>📤 ${esc(title)}</h2><button class="btn-ghost btn-sm" onclick="studentHome('video')">← 돌아가기</button></div>
-     <div class="pill">동영상 파일을 선택하세요. 휴대폰으로 찍은 영상 그대로 올려도 돼요.<br><span class="small">업로드 중에는 화면을 닫지 마세요. 와이파이 환경을 추천!</span></div>
+     <div class="pill">동영상 파일을 선택하세요. 휴대폰으로 찍은 영상 그대로 올려도 돼요.<br><span class="small">업로드 중에는 화면을 닫지 마세요. 와이파이 환경을 추천!<br>중간에 끊기면 같은 파일을 다시 선택하고 업로드 시작 → 끊긴 지점부터 이어서 올라가요.</span></div>
      <input type="file" id="vidFile" accept="video/*,audio/*" style="margin:10px 0; width:100%">
      <input type="text" id="vidNote" placeholder="메모 (선택 — 예: 2번 문항 연습, 1차 시도)">
      <div id="upProg"></div>
@@ -410,14 +479,15 @@ window.doUpload = async function(assignmentId){
   const f = document.getElementById("vidFile").files[0];
   if(!f) return alert("파일을 먼저 선택하세요");
   const note = (document.getElementById("vidNote").value||"").trim();
+  if(!bigFileOk(f)) return;
   const btn = document.getElementById("upBtn"); btn.disabled = true; btn.textContent = "업로드 중...";
   const prog = document.getElementById("upProg");
-  prog.innerHTML = `<div class="progress"><div id="bar" style="width:0%"></div></div><div class="small" id="pct">0% · ${esc(f.name)} (${mb(f.size)})</div>`;
+  prog.innerHTML = `<div class="progress"><div id="bar" style="width:0%"></div></div><div class="small" id="pct">0% · ${esc(f.name)} (${mb(f.size)})</div><div class="small" id="upMsg" style="color:#b45309"></div>`;
   try{
     const res = await driveUpload(f, "video", ME.name, p=>{
       document.getElementById("bar").style.width = p+"%";
       document.getElementById("pct").textContent = p+"% · "+f.name+" ("+mb(f.size)+")";
-    });
+    }, m=>{ const el=document.getElementById("upMsg"); if(el) el.textContent = m||""; });
     const { error } = await sb.from("video_submissions").insert({
       student_id: ME.id, assignment_id: assignmentId, filename: f.name, bytes: f.size,
       drive_file_id: res.fileId, drive_link: res.link, note: note || null
