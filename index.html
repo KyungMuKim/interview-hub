@@ -1112,6 +1112,7 @@ window.tOpenEssay = async function(essayId){
          <div id="quoteBox" class="small" style="margin:6px 0"></div>
          <div id="tplBox" class="small" style="margin:6px 0"></div>
          <textarea id="cmt" style="min-height:110px" placeholder="Enter로 등록 · Shift+Enter 줄바꿈"></textarea>
+         <div class="cnt" id="cmtCnt"></div>
          <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button>
            <button class="btn-ghost btn-sm" onclick="tSaveTemplate()">＋ 이 문구를 템플릿으로</button></div>
          ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${quoteBox(c,false)}<div style="margin-top:6px">${esc(c.content)}</div><span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
@@ -1121,6 +1122,7 @@ window.tOpenEssay = async function(essayId){
   window._essayTexts = { "1": e.content||"", "2": e.content2||"", "3": e.content3||"", "backup": e.backup_content||"" };
   window._quote = null;
   const cmt = document.getElementById("cmt");
+  cmt.addEventListener("input", cmtCount); cmtCount();
   cmt.focus();
   cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); tAddComment(e.id); } });
   tRenderTemplates();
@@ -1134,6 +1136,12 @@ window.tOpenEssay = async function(essayId){
       tSetQuote(pre.dataset.part, txt);
     });
   });
+};
+/* 코멘트 칸 글자수(공백 제외). 구분선(---) 아래에 고쳐 쓴 글을 붙인 경우 그 부분만 따로 센다 */
+window.cmtCount = function(){
+  const ta = document.getElementById("cmt"), box = document.getElementById("cmtCnt"); if(!ta || !box) return;
+  const v = ta.value, m = v.match(/^[ \t]*[-─—=]{3,}[ \t]*$/m);
+  box.textContent = `코멘트 ${nc(v).toLocaleString()}자 (공백 제외)` + (m ? ` · 구분선 아래 ${nc(v.slice(m.index + m[0].length)).toLocaleString()}자` : "");
 };
 window.tChangeSchool = async function(essayId, school){
   if(!school) return;
@@ -1165,6 +1173,7 @@ window.tUseTemplate = async function(id){
   const t = (window._tpls||[]).find(x=>x.id===id); if(!t) return;
   const ta = document.getElementById("cmt");
   ta.value = (ta.value ? ta.value.replace(/\s*$/,"") + "\n" : "") + t.content;
+  cmtCount();
   ta.focus();
   sb.from("comment_templates").update({ uses: (t.uses||0)+1 }).eq("id", id).then(()=>{});
 };
