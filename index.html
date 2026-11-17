@@ -587,7 +587,7 @@ async function paneEssays(){
   const { data: essays, error } = await sb.from("essays").select("*").eq("student_id", ME.id).is("deleted_at", null).order("updated_at",{ascending:false});
   if(error) err(error);
   pane.innerHTML = `
-    <div class="sub">지원 학교별로 자소서를 만들고, 고칠 때마다 저장하세요. 이전 버전은 자동 보관됩니다.</div>
+    <div class="sub">지원 학교별로 자소서를 만들고, 고칠 때마다 저장하세요. 이전 버전은 자동 보관됩니다. 저장 전에 쓰던 글은 이 기기에 임시보관돼요.</div>
     ${essays.map(e=>`
       <div class="item clickable" onclick="openEssay('${e.id}')">
         <h4>${esc(e.school)} — ${esc(e.title)}</h4>
@@ -609,6 +609,52 @@ window.createEssay = async function(){
   openEssay(data.id);
 };
 
+/* ---------- 자소서 임시보관: 저장 버튼을 누르기 전의 글을 이 기기(localStorage)에 자동 보관 ---------- */
+const DRAFT_SLOTS = ["essayText","essayText2","essayText3","backupText"];
+const draftKey = (id, sfx) => `ihDraft:${ME?ME.id:""}:${id}${sfx||""}`;   // sfx ":prev" = 다른 곳에서 저장된 뒤라 자동으로 불러오지 않고 보류한 글
+const draftRead = (id, sfx) => { try{ return JSON.parse(localStorage.getItem(draftKey(id, sfx))||"null"); }catch(e){ return null; } };
+const draftDrop = (id, sfx) => { try{ localStorage.removeItem(draftKey(id, sfx)); }catch(e){} };
+const draftOverride = d => ({ content: d.v.essayText||"", content2: d.v.essayText2||"", content3: d.v.essayText3||"", backup_content: d.v.backupText||"" });
+/* 서버 글이 textarea에 들어갔을 때의 값(줄바꿈 정규화 포함) */
+const taVal = t => { const d = document.createElement("div"); d.innerHTML = `<textarea>${esc(t||"")}</textarea>`; return d.firstChild.value; };
+let ESSAY_EDIT = null;   // { id, baseAt, base:{칸id:서버 글}, timer }
+const essayVals = () => Object.fromEntries(DRAFT_SLOTS.map(k=>[k, (document.getElementById(k)||{value:""}).value]));
+const essayOpen = () => !!(ESSAY_EDIT && document.getElementById("essayText") && document.getElementById("draftState"));
+const essayDirty = () => { if(!essayOpen()) return false; const v = essayVals(); return DRAFT_SLOTS.some(k=>v[k]!==ESSAY_EDIT.base[k]); };
+window.draftFlush = function(){
+  if(!essayOpen()) return;
+  clearTimeout(ESSAY_EDIT.timer);
+  const st = document.getElementById("draftState");
+  if(!essayDirty()){ draftDrop(ESSAY_EDIT.id); st.innerHTML = ""; return; }
+  let ok = true;
+  try{ localStorage.setItem(draftKey(ESSAY_EDIT.id), JSON.stringify({ ts: Date.now(), baseAt: ESSAY_EDIT.baseAt, v: essayVals() })); }catch(e){ ok = false; }
+  st.innerHTML = ok
+    ? `✏️ 아직 저장 전이에요. 쓴 글은 이 기기에 임시보관됐어요 (${fmtDT(Date.now()).slice(11)}). <b>저장</b>을 눌러야 선생님께 보여요.`
+    : `⚠ 아직 저장 전이에요. 이 기기에서는 임시보관이 안 되니 <b>저장</b>을 꼭 눌러 주세요.`;
+};
+const draftTouch = () => { if(!essayOpen()) return; clearTimeout(ESSAY_EDIT.timer); ESSAY_EDIT.timer = setTimeout(draftFlush, 700); };
+window.addEventListener("beforeunload", ev=>{ if(essayDirty()){ draftFlush(); ev.preventDefault(); ev.returnValue = ""; } });
+window.addEventListener("pagehide", ()=>draftFlush());
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "hidden") draftFlush(); });
+window.leaveEssay = function(){
+  if(essayDirty()){
+    draftFlush();
+    if(!confirm("아직 저장하지 않았어요. 저장을 눌러야 선생님께 보여요.\n그래도 목록으로 나갈까요?\n(쓴 글은 이 기기에 임시보관돼서, 다시 열면 이어서 쓸 수 있어요)")) return;
+  }
+  studentHome("essay");
+};
+window.draftApply = async function(essayId){
+  const d = draftRead(essayId, ":prev"); if(!d || !d.v) return openEssay(essayId);
+  draftDrop(essayId, ":prev");
+  await openEssay(essayId, draftOverride(d));
+};
+window.draftDiscard = function(essayId, sfx){
+  if(!confirm("임시보관된 글을 버릴까요? 버리면 되돌릴 수 없어요.")) return;
+  if(sfx){ draftDrop(essayId, sfx); const n = document.getElementById("draftPrevNote"); if(n) n.remove(); return; }
+  draftDrop(essayId); ESSAY_EDIT = null;
+  openEssay(essayId);
+};
+
 window.openEssay = async function(essayId, override){
   const [{ data: e0, error: e1 }, { data: comments }, { count: revCount }] = await Promise.all([
     sb.from("essays").select("*").eq("id", essayId).single(),
@@ -616,7 +662,24 @@ window.openEssay = async function(essayId, override){
     sb.from("essay_revisions").select("*",{count:"exact",head:true}).eq("essay_id", essayId)
   ]);
   if(e1) err(e1);
-  const e = override ? { ...e0, ...override } : e0;
+  const srv = { essayText: e0.content||"", essayText2: e0.content2||"", essayText3: e0.content3||"", backupText: e0.backup_content||"" };
+  const differs = d => !!(d && d.v) && DRAFT_SLOTS.some(k=>{ const x = String(d.v[k]??""); return x!==taVal(srv[k]) && (nc(x)>0 || nc(srv[k])>0); });
+  let draft = override ? null : draftRead(essayId), prev = draftRead(essayId, ":prev");
+  if(draft && !differs(draft)){ draftDrop(essayId); draft = null; }
+  if(draft && draft.baseAt !== e0.updated_at){   // 이 글을 쓰기 시작한 뒤에 다른 곳에서 저장됨 → 덮어쓰지 않고 보류
+    try{ localStorage.setItem(draftKey(essayId, ":prev"), JSON.stringify(draft)); prev = draft; draftDrop(essayId); }catch(err){}
+    draft = null;
+  }
+  if(prev && !differs(prev)){ draftDrop(essayId, ":prev"); prev = null; }
+  let draftNote = "", fromDraft = null;
+  if(draft){
+    fromDraft = draftOverride(draft);
+    draftNote += `<div class="flag amber">💾 저장하지 않고 나갔던 글을 되살렸어요 (${fmtDT(draft.ts).slice(5)}에 쓰던 글). 확인한 뒤 <b>저장</b>을 눌러 주세요. <button class="btn-ghost btn-sm" onclick="draftDiscard('${essayId}')">되살린 글 버리기</button></div>`;
+  }
+  if(prev){
+    draftNote += `<div class="flag amber" id="draftPrevNote">💾 이 기기에 저장하지 않은 글이 남아 있어요 (${fmtDT(prev.ts).slice(5)}에 쓰던 글). 그 뒤에 저장된 글이 따로 있어서 자동으로 불러오지 않았어요. <button class="btn-ghost btn-sm" onclick="draftApply('${essayId}')">쓰던 글 불러오기</button> <button class="btn-ghost btn-sm" onclick="draftDiscard('${essayId}', ':prev')">버리기</button></div>`;
+  }
+  const e = override ? { ...e0, ...override } : fromDraft ? { ...e0, ...fromDraft } : e0;
   const f = formFor(e.school); CUR_FORM = f;
   const used = formSlots(f);
   const extra = ["1","2","3"].filter(s=>!used.includes(s) && nc(e[SLOT_COL[s]])>0);
@@ -635,9 +698,10 @@ window.openEssay = async function(essayId, override){
    <div class="card">
      <div class="topbar">
        <h2>${esc(e.school)} · ${esc(e.title)}</h2>
-       <button class="btn-ghost btn-sm" onclick="studentHome('essay')">← 목록</button>
+       <button class="btn-ghost btn-sm" onclick="leaveEssay()">← 목록</button>
      </div>
      <div class="small">마지막 저장 ${fmtDT(e.updated_at)} · 보관된 버전 ${revCount||0}개</div>
+     ${draftNote}
      <div class="row" style="align-items:center; gap:8px; margin-top:6px">
        <span class="small">지원 학교 양식</span>
        <select id="schoolSel" onchange="changeSchool('${e.id}', this.value)" style="margin:0">${schoolOptions(f.key)}</select>
@@ -648,16 +712,17 @@ window.openEssay = async function(essayId, override){
          ${srcHtml(f)}
          ${headHtml(f)}
          ${f.notes.map(noteHtml).join("")}
-         ${f.key?`<div class="small" style="margin:4px 0"><a href="#" onclick="showPrompts('${f.key}', ()=>openEssay('${e.id}')); return false">📋 ${esc(f.key)} 발문 원문만 따로 보기</a></div>`:""}
+         ${f.key?`<div class="small" style="margin:4px 0"><a href="#" onclick="draftFlush(); showPrompts('${f.key}', ()=>openEssay('${e.id}')); return false">📋 ${esc(f.key)} 발문 원문만 따로 보기</a></div>`:""}
          ${groupsHtml}
          ${extraHtml}
          ${hiddenHtml}
          <div class="cnt" id="cntTotal" style="font-weight:700"></div>
          <div class="row">
            <button class="btn-primary" onclick="saveEssay('${e.id}')">💾 저장</button>
-           <button class="btn-ghost" onclick="essayHistory('${e.id}')">🕘 이전 버전</button>
+           <button class="btn-ghost" onclick="draftFlush(); essayHistory('${e.id}')">🕘 이전 버전</button>
            <button class="btn-danger btn-sm" onclick="deleteEssay('${e.id}')">삭제</button>
          </div>
+         <div class="small" id="draftState" style="margin-top:6px"></div>
        </div>
        <div class="side">
          <h3 style="margin-top:8px">📦 백업 섹션 <span class="small">(글자수 미포함)</span></h3>
@@ -680,6 +745,11 @@ window.openEssay = async function(essayId, override){
   const bupd = ()=>{ bcnt.textContent = `백업 ${nc(bt.value)}자 (글자수에 안 들어가요)`; };
   ["1","2","3"].forEach(s=>{ const t=document.getElementById(SLOT_TA[s]); if(t) t.addEventListener("input", upd); }); upd();
   bt.addEventListener("input", bupd); bupd();
+  const hid = hidden.map(s=>SLOT_TA[s]);
+  ESSAY_EDIT = { id: essayId, baseAt: e0.updated_at, timer: null,
+    base: Object.fromEntries(DRAFT_SLOTS.map(k=>[k, (hid.includes(k) && !nc(srv[k])) ? "" : taVal(srv[k])])) };
+  DRAFT_SLOTS.forEach(k=>{ const t = document.getElementById(k); if(t) t.addEventListener("input", draftTouch); });
+  draftFlush();
 };
 
 window.changeSchool = async function(essayId, school){
@@ -687,6 +757,7 @@ window.changeSchool = async function(essayId, school){
   const v = id => (document.getElementById(id)||{value:""}).value;
   const { error } = await sb.from("essays").update({ school, content: v("essayText"), content2: v("essayText2"), content3: v("essayText3"), backup_content: v("backupText") }).eq("id", essayId);
   if(error) return alert(error.message);
+  draftDrop(essayId);
   openEssay(essayId);
 };
 
@@ -708,6 +779,7 @@ window.markComment = async function(id, status){
   if(el && c){ el.outerHTML = stuComment(c); }
 };
 window.saveEssay = async function(essayId){
+  draftFlush();   // 저장이 실패해도 쓴 글이 이 기기에 남도록
   const content = document.getElementById("essayText").value;
   const content2 = (document.getElementById("essayText2")||{value:""}).value;
   const content3 = (document.getElementById("essayText3")||{value:""}).value;
@@ -716,6 +788,7 @@ window.saveEssay = async function(essayId){
   if(e1) err(e1);
   const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content, content2, content3, backup_content: backup });
   if(e2) err(e2);
+  draftDrop(essayId);
   alert("저장했어요! (이전 버전도 함께 보관됩니다)");
   openEssay(essayId);
 };
