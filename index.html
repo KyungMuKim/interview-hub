@@ -57,6 +57,13 @@
   .split .side{flex:1; min-width:260px;}
   .quote{background:#fef3c7; border-left:3px solid #d97706; padding:6px 10px; margin:6px 0; font-size:.88rem; line-height:1.55; white-space:pre-wrap; border-radius:6px;}
   .quote.gone{background:#f1f5f9; border-left-color:#94a3b8; color:#64748b;}
+  .prop{background:#fff; border:1px solid #fcd34d; border-radius:8px; padding:9px 11px; margin-top:8px;}
+  .proptxt{white-space:pre-wrap; word-break:break-word; line-height:1.75; font-size:.95rem; margin-top:6px;}
+  .dfgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;}
+  .dfgrid > div{background:#f8fafc; border-radius:8px; padding:8px 10px;}
+  @media (max-width:700px){ .dfgrid{grid-template-columns:1fr;} }
+  .dfd{background:#fee2e2; color:#991b1b; text-decoration:line-through;}
+  .dfi{background:#dcfce7; color:#166534;}
   mark.hl{background:#fde68a; border-radius:3px; padding:0 2px;}
   .yg{background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px; padding:8px 11px; margin:8px 0 6px; font-size:.86rem; line-height:1.6; color:#334155; word-break:keep-all;}
   .ygnote{font-size:.82rem; color:#475569; line-height:1.55; margin:3px 0;}
@@ -114,7 +121,58 @@ const quoteBox = (c, editable) => {
   return `<div class="quote ${found?"":"gone"}">${found?"":"<b>원문이 수정됨 · </b>"}“${esc(c.quote)}”${found&&editable?` <button class="btn-ghost btn-sm" style="padding:2px 6px" onclick="findQuote('${c.part}', ${JSON.stringify(c.quote).replace(/"/g,"&quot;")})">본문에서 찾기</button>`:""}</div>`;
 };
 const partText = p => { const el = document.getElementById(p==="1"?"essayText":p==="2"?"essayText2":p==="3"?"essayText3":p==="backup"?"backupText":""); return el ? el.value : ""; };
-const stuComment = c => `<div class="comment" id="cm-${c.id}">${partBadge(c.part||"all")}${quoteBox(c, true)}<div style="margin-top:6px">${esc(c.content)}</div>
+/* 고쳐 쓴 글(제안본) 코멘트: content 첫 줄이 PROP_TAG. 구분선(---)이 있으면 위는 설명, 아래가 고쳐 쓴 글 */
+const PROP_TAG = "[[제안본]]";
+const DIV_RE = /^[ \t]*[-─—=]{3,}[ \t]*$/m;
+const isProp = c => ["1","2","3"].includes(c.part) && String(c.content||"").startsWith(PROP_TAG);
+const cmText = c => { const t = String(c.content||""); return t.startsWith(PROP_TAG) ? t.slice(PROP_TAG.length).replace(/^\r?\n/,"") : t; };
+const propSplit = t => { t = String(t||""); const m = t.match(DIV_RE); return m ? { note: t.slice(0, m.index).trim(), prop: t.slice(m.index + m[0].length).trim() } : { note: "", prop: t.trim() }; };
+const cmBody = c => {
+  (window._cm || (window._cm = {}))[c.id] = c;
+  if(!isProp(c)) return `<div style="margin-top:6px">${esc(cmText(c))}</div>`;
+  const q = propSplit(cmText(c));
+  return `${q.note?`<div style="margin-top:6px">${esc(q.note)}</div>`:""}<div class="prop"><b>✍️ 고쳐 쓴 글 (제안)</b> <span class="small" style="display:inline">${nc(q.prop).toLocaleString()}자 · 공백 제외</span><div class="proptxt">${esc(q.prop)}</div><div class="row" style="margin-top:6px"><button class="btn-ghost btn-sm" onclick="propDiff('${c.id}')">내 글과 비교</button><button class="btn-ghost btn-sm" onclick="propApply('${c.id}')">이 글로 바꾸기</button></div><div id="pd-${c.id}"></div></div>`;
+};
+/* 어절 단위 비교: 내 글에서 빠지는 부분(dfd), 고쳐 쓴 글에서 새로 들어온 부분(dfi) */
+function wordDiff(a, b){
+  const tk = t => String(t||"").split(/(\s+)/).filter(x=>x!=="");
+  const A = tk(a), B = tk(b), isW = x => !/^\s+$/.test(x);
+  const ai = A.map((x,i)=>isW(x)?i:-1).filter(i=>i>=0), bi = B.map((x,i)=>isW(x)?i:-1).filter(i=>i>=0);
+  const n = ai.length, m = bi.length, W = m+1, L = new Uint16Array((n+1)*W);
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) L[i*W+j] = A[ai[i]]===B[bi[j]] ? L[(i+1)*W+j+1]+1 : Math.max(L[(i+1)*W+j], L[i*W+j+1]);
+  const keepA = new Set(), keepB = new Set();
+  for(let i=0,j=0; i<n && j<m; ){ if(A[ai[i]]===B[bi[j]]){ keepA.add(ai[i]); keepB.add(bi[j]); i++; j++; } else if(L[(i+1)*W+j] >= L[i*W+j+1]) i++; else j++; }
+  const out = (T, keep, cls) => T.map((x,i)=> !isW(x) || keep.has(i) ? esc(x) : `<span class="${cls}">${esc(x)}</span>`).join("");
+  return { a: out(A, keepA, "dfd"), b: out(B, keepB, "dfi"), same: n===m && keepA.size===n };
+}
+let PROP_PENDING = { essayId: null, ids: [] };   // "이 글로 바꾸기"를 누른 코멘트: 저장하면 반영됨으로 표시
+window.propDiff = function(id){
+  const c = (window._cm||{})[id], box = document.getElementById("pd-"+id); if(!c || !box) return;
+  if(box.innerHTML){ box.innerHTML = ""; return; }
+  const ta = document.getElementById(SLOT_TA[c.part]);
+  if(!ta || ta.style.display==="none"){ box.innerHTML = `<div class="small" style="display:block">지금 양식에는 이 칸이 없어서 비교할 수 없어요.</div>`; return; }
+  const d = wordDiff(ta.value, propSplit(cmText(c)).prop);
+  box.innerHTML = d.same ? `<div class="small" style="display:block">지금 내 글과 같아요.</div>`
+    : `<div class="dfgrid"><div><b>지금 내 글</b> <span class="small" style="display:inline">${nc(ta.value).toLocaleString()}자 · 빨간 줄은 빠지는 부분</span><div class="proptxt">${d.a}</div></div><div><b>고쳐 쓴 글</b> <span class="small" style="display:inline">초록은 새로 들어온 부분</span><div class="proptxt">${d.b}</div></div></div>`;
+};
+window.propApply = function(id){
+  const c = (window._cm||{})[id]; if(!c) return;
+  const ta = document.getElementById(SLOT_TA[c.part]), bt = document.getElementById("backupText");
+  if(!ta || ta.style.display==="none") return alert("지금 양식에는 이 칸이 없어요. 지원 학교 양식을 확인해 주세요.");
+  const next = propSplit(cmText(c)).prop, old = ta.value;
+  if(old.trim() === next) return alert("지금 내 글과 같아요.");
+  if(!confirm(`[${partName(c.part)}] 칸의 글을 고쳐 쓴 글로 바꿀까요?\n지금 글은 백업 섹션 맨 아래로 옮겨 둘게요.\n바꾼 뒤 읽어 보고 저장을 눌러야 확정돼요.`)) return;
+  if(nc(old) && bt){
+    bt.value = bt.value.replace(/\s+$/,"") + (bt.value.trim() ? "\n\n" : "") + `[바꾸기 전 글 · ${partName(c.part)} · ${fmtDT(Date.now()).slice(5)}]\n` + old.trim();
+    bt.dispatchEvent(new Event("input"));
+  }
+  ta.value = next; ta.dispatchEvent(new Event("input"));
+  if(ESSAY_EDIT){ if(PROP_PENDING.essayId !== ESSAY_EDIT.id) PROP_PENDING = { essayId: ESSAY_EDIT.id, ids: [] }; if(!PROP_PENDING.ids.includes(id)) PROP_PENDING.ids.push(id); }
+  const box = document.getElementById("pd-"+id); if(box) box.innerHTML = `<div class="small" style="display:block; color:#166534">바꿨어요. 읽어 보고 <b>저장</b>을 눌러 주세요. (이전 글은 백업 섹션에 있어요)</div>`;
+  draftFlush();
+  ta.scrollIntoView({behavior:"smooth", block:"center"});
+};
+const stuComment = c => `<div class="comment" id="cm-${c.id}">${partBadge(c.part||"all")}${quoteBox(c, true)}${cmBody(c)}
   <span class="small">${fmtDT(c.created_at)}
     ${c.student_status==="applied"?'<b style="color:#166534">✅ 반영했어요</b>':c.student_status==="seen"?'<b style="color:#1d4ed8">👀 확인했어요</b> <button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'applied\')">반영했어요</button>':'<button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'seen\')">확인했어요</button> <button class="btn-ghost btn-sm" onclick="markComment(\''+c.id+'\',\'applied\')">반영했어요</button>'}
   </span></div>`;
@@ -586,11 +644,17 @@ async function paneEssays(){
   const pane = document.getElementById("pane");
   const { data: essays, error } = await sb.from("essays").select("*").eq("student_id", ME.id).is("deleted_at", null).order("updated_at",{ascending:false});
   if(error) err(error);
+  const unseen = {}; let unseenAll = 0;
+  if(essays.length){
+    const { data: cs } = await sb.from("essay_comments").select("essay_id, student_status").in("essay_id", essays.map(e=>e.id));
+    (cs||[]).forEach(c=>{ if(!c.student_status){ unseen[c.essay_id] = (unseen[c.essay_id]||0) + 1; unseenAll++; } });
+  }
   pane.innerHTML = `
+    ${unseenAll?`<div class="flag amber">💬 아직 확인하지 않은 코멘트가 ${unseenAll}건 있어요. 글을 열어 읽은 뒤 <b>확인했어요</b>를 눌러 주세요.</div>`:""}
     <div class="sub">지원 학교별로 자소서를 만들고, 고칠 때마다 저장하세요. 이전 버전은 자동 보관됩니다. 저장 전에 쓰던 글은 이 기기에 임시보관돼요.</div>
     ${essays.map(e=>`
       <div class="item clickable" onclick="openEssay('${e.id}')">
-        <h4>${esc(e.school)} — ${esc(e.title)}</h4>
+        <h4>${esc(e.school)} — ${esc(e.title)}${unseen[e.id]?` <span class="badge b-jasa">새 코멘트 ${unseen[e.id]}</span>`:""}</h4>
         <div class="small">${essaySummary(e)} · 마지막 저장 ${fmtDT(e.updated_at)}</div>
       </div>`).join("") || '<div class="pill">아직 자소서가 없어요. 아래에서 새로 만들어 보세요.</div>'}
     <div class="row"><button class="btn-ghost" onclick="showPrompts(MY_SCHOOL_GUESS(essays), ()=>studentHome('essay'))">📋 학교별 자소서 발문 원문 보기</button></div>
@@ -789,6 +853,10 @@ window.saveEssay = async function(essayId){
   const { error: e2 } = await sb.from("essay_revisions").insert({ essay_id: essayId, content, content2, content3, backup_content: backup });
   if(e2) err(e2);
   draftDrop(essayId);
+  if(PROP_PENDING.essayId === essayId && PROP_PENDING.ids.length){
+    await sb.from("essay_comments").update({ student_status: "applied", student_status_at: new Date().toISOString() }).in("id", PROP_PENDING.ids);
+    PROP_PENDING = { essayId: null, ids: [] };
+  }
   alert("저장했어요! (이전 버전도 함께 보관됩니다)");
   openEssay(essayId);
 };
@@ -1111,20 +1179,32 @@ window.tOpenEssay = async function(essayId){
          </select>
          <div id="quoteBox" class="small" style="margin:6px 0"></div>
          <div id="tplBox" class="small" style="margin:6px 0"></div>
-         <textarea id="cmt" style="min-height:110px" placeholder="Enter로 등록 · Shift+Enter 줄바꿈"></textarea>
+         <textarea id="cmt" style="min-height:160px" placeholder="등록 버튼 또는 Ctrl+Enter로 등록 · Enter는 줄바꿈 (쓰던 글은 이 기기에 임시보관돼요)"></textarea>
          <div class="cnt" id="cmtCnt"></div>
+         <label class="small" style="display:block; margin:6px 0; cursor:pointer"><input type="checkbox" id="cmtProp" style="width:auto; margin-right:4px">✍️ 고쳐 쓴 글(제안본)로 등록 <span style="font-weight:400">· 학생이 자기 글과 비교하고 한 번에 바꿀 수 있어요. 설명을 같이 쓰려면 설명 아래에 --- 한 줄을 긋고 그 아래에 글을 쓰세요.</span></label>
+         <div class="row" style="margin-top:4px"><button class="btn-ghost btn-sm" onclick="tLoadForRewrite()">📋 학생 글 불러와서 고쳐 쓰기</button></div>
          <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button>
            <button class="btn-ghost btn-sm" onclick="tSaveTemplate()">＋ 이 문구를 템플릿으로</button></div>
-         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${quoteBox(c,false)}<div style="margin-top:6px">${esc(c.content)}</div><span class="small">${fmtDT(c.created_at)} <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button></span></div>`).join("")}`:""}
+         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${isProp(c)?'<span class="badge b-both">제안본</span>':""}${quoteBox(c,false)}<div style="margin-top:6px">${esc(cmText(c))}</div><span class="small">${fmtDT(c.created_at)} · ${nc(isProp(c)?propSplit(cmText(c)).prop:cmText(c)).toLocaleString()}자 <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button>${["1","2","3"].includes(c.part)?` <button class="btn-ghost btn-sm" onclick="tToggleProp('${c.id}','${e.id}')">${isProp(c)?"제안본 해제":"제안본으로 표시"}</button>`:""}</span></div>`).join("")}`:""}
        </div>
      </div>
    </div>`;
   window._essayTexts = { "1": e.content||"", "2": e.content2||"", "3": e.content3||"", "backup": e.backup_content||"" };
   window._quote = null;
   const cmt = document.getElementById("cmt");
-  cmt.addEventListener("input", cmtCount); cmtCount();
+  window._cmtEssay = e.id;
+  const cd = cmtDraftRead(e.id);   // 쓰다 만 코멘트 되살리기
+  if(cd){
+    cmt.value = cd.text||"";
+    const ps = document.getElementById("cmtPart"); if(cd.part && [...ps.options].some(o=>o.value===cd.part)) ps.value = cd.part;
+    document.getElementById("cmtProp").checked = !!cd.prop;
+    if(cd.quote && cd.quote.text) tSetQuote(cd.quote.part, cd.quote.text);
+  }
+  cmt.addEventListener("input", ()=>{ cmtCount(); cmtDraftSave(); }); cmtCount();
+  document.getElementById("cmtPart").addEventListener("change", cmtDraftSave);
+  document.getElementById("cmtProp").addEventListener("change", cmtDraftSave);
   cmt.focus();
-  cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); tAddComment(e.id); } });
+  cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); tAddComment(e.id); } });
   tRenderTemplates();
   // 드래그 선택 → 인용
   document.querySelectorAll("pre.essay-view.selectable").forEach(pre=>{
@@ -1136,6 +1216,33 @@ window.tOpenEssay = async function(essayId){
       tSetQuote(pre.dataset.part, txt);
     });
   });
+};
+/* 쓰다 만 코멘트 임시보관 (이 기기) */
+const cmtDraftKey = id => `ihCmtDraft:${id}`;
+const cmtDraftRead = id => { try{ return JSON.parse(localStorage.getItem(cmtDraftKey(id))||"null"); }catch(e){ return null; } };
+window.cmtDraftSave = function(){
+  const ta = document.getElementById("cmt"), id = window._cmtEssay; if(!ta || !id) return;
+  try{
+    if(!ta.value.trim()) return localStorage.removeItem(cmtDraftKey(id));
+    localStorage.setItem(cmtDraftKey(id), JSON.stringify({ text: ta.value, part: (document.getElementById("cmtPart")||{}).value, prop: !!(document.getElementById("cmtProp")||{}).checked, quote: window._quote||null, ts: Date.now() }));
+  }catch(e){}
+};
+/* 학생의 현재 글을 코멘트 칸으로 불러와 그 위에서 고쳐 쓰기 */
+window.tLoadForRewrite = function(){
+  const part = (document.getElementById("cmtPart")||{}).value, ta = document.getElementById("cmt");
+  if(!["1","2","3"].includes(part)) return alert("먼저 위에서 영역(① ② ③ 중 하나)을 고르세요");
+  const txt = (window._essayTexts||{})[part]||"";
+  if(!txt.trim()) return alert("이 영역은 학생 글이 비어 있어요");
+  ta.value = ta.value.trim() ? ta.value.replace(/\s+$/,"") + "\n---\n" + txt : txt;
+  document.getElementById("cmtProp").checked = true;
+  cmtCount(); cmtDraftSave(); ta.focus();
+};
+window.tToggleProp = async function(id, essayId){
+  const { data: c } = await sb.from("essay_comments").select("*").eq("id", id).single(); if(!c) return;
+  const content = isProp(c) ? cmText(c) : PROP_TAG + "\n" + c.content;
+  const { error } = await sb.from("essay_comments").update({ content }).eq("id", id);
+  if(error) return alert(error.message);
+  await tOpenEssay(essayId);
 };
 /* 코멘트 칸 글자수(공백 제외). 구분선(---) 아래에 고쳐 쓴 글을 붙인 경우 그 부분만 따로 센다 */
 window.cmtCount = function(){
@@ -1150,14 +1257,14 @@ window.tChangeSchool = async function(essayId, school){
   tOpenEssay(essayId);
 };
 window.tSetQuote = function(part, txt){
-  window._quote = { part, text: txt };
+  window._quote = { part, text: txt }; cmtDraftSave();
   const sel = document.getElementById("cmtPart"); if(sel) sel.value = part;
   const box = document.getElementById("quoteBox");
   if(box) box.innerHTML = `<div class="quote">인용: “${esc(txt.length>140?txt.slice(0,140)+"…":txt)}” <button class="btn-ghost btn-sm" style="padding:2px 6px" onclick="tClearQuote()">✕ 인용 취소</button></div>`;
   document.getElementById("cmt").focus();
 };
 window.tClearQuote = function(){
-  window._quote = null;
+  window._quote = null; cmtDraftSave();
   const box = document.getElementById("quoteBox"); if(box) box.innerHTML = "";
 };
 /* 피드백 템플릿 */
@@ -1173,7 +1280,7 @@ window.tUseTemplate = async function(id){
   const t = (window._tpls||[]).find(x=>x.id===id); if(!t) return;
   const ta = document.getElementById("cmt");
   ta.value = (ta.value ? ta.value.replace(/\s*$/,"") + "\n" : "") + t.content;
-  cmtCount();
+  cmtCount(); cmtDraftSave();
   ta.focus();
   sb.from("comment_templates").update({ uses: (t.uses||0)+1 }).eq("id", id).then(()=>{});
 };
@@ -1196,8 +1303,12 @@ window.tAddComment = async function(essayId){
   if(!content) return alert("내용을 입력하세요");
   const part = (document.getElementById("cmtPart")||{value:"all"}).value;
   const quote = (window._quote && window._quote.part===part) ? window._quote.text : null;
-  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content, part, quote });
+  const asProp = !!(document.getElementById("cmtProp")||{}).checked;
+  if(asProp && !["1","2","3"].includes(part)) return alert("제안본은 영역을 ① ② ③ 중 하나로 골라야 학생이 그 칸에 바로 적용할 수 있어요");
+  if(asProp && !propSplit(content).prop) return alert("구분선(---) 아래에 고쳐 쓴 글이 없어요");
+  const { error } = await sb.from("essay_comments").insert({ essay_id: essayId, content: asProp ? PROP_TAG + "\n" + content : content, part, quote });
   if(error) return alert(error.message);
+  try{ localStorage.removeItem(cmtDraftKey(essayId)); }catch(e){}
   tOpenEssay(essayId);
 };
 window.tDelComment = async function(id, essayId){
