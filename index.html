@@ -52,6 +52,13 @@
   .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;}
   pre.essay-view{white-space:pre-wrap; font-family:inherit; font-size:.98rem; line-height:1.8; background:#f8fafc; border-radius:12px; padding:16px;}
   body.wide{max-width:1200px;}
+  /* 선생님 열람 화면: 학생 글(왼쪽)과 코멘트 칸(오른쪽)이 각자 따로 스크롤 */
+  body.wide:has(.tsplit){max-width:1560px;}
+  @media (min-width:900px){
+    .split.tsplit{flex-wrap:nowrap;}
+    .split.tsplit .main, .split.tsplit .side{flex:1; min-width:0; height:calc(100vh - 170px); min-height:420px; overflow-y:auto; padding-right:8px;}
+    .split.tsplit #cmt{min-height:calc(100vh - 470px);}
+  }
   .split{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
   .split .main{flex:2; min-width:320px;}
   .split .side{flex:1; min-width:260px;}
@@ -1158,7 +1165,7 @@ window.tOpenEssay = async function(essayId){
        <select onchange="tChangeSchool('${e.id}', this.value)" style="margin:0">${schoolOptions(f.key)}</select>
        ${f.keys.length>1?`<span class="small">학교명이 여러 개라 ${esc(f.key)} 기준</span>`:""}
      </div>
-     <div class="split">
+     <div class="split tsplit">
        <div class="main">
          <div class="small" style="margin-bottom:4px">💡 본문에서 문장을 <b>드래그</b>하면 그 부분이 코멘트에 인용됩니다.</div>
          ${headHtml(f)}
@@ -1201,7 +1208,10 @@ window.tOpenEssay = async function(essayId){
     if(cd.quote && cd.quote.text) tSetQuote(cd.quote.part, cd.quote.text);
   }
   cmt.addEventListener("input", ()=>{ cmtCount(); cmtDraftSave(); }); cmtCount();
-  document.getElementById("cmtPart").addEventListener("change", cmtDraftSave);
+  /* 영역을 고르면 왼쪽 학생 글도 그 영역으로 이동 */
+  const showPart = () => { const el = document.querySelector(`.tsplit .main pre[data-part="${document.getElementById("cmtPart").value}"]`); if(el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
+  document.getElementById("cmtPart").addEventListener("change", ()=>{ cmtDraftSave(); showPart(); });
+  if(cd && cd.part) showPart();
   document.getElementById("cmtProp").addEventListener("change", cmtDraftSave);
   cmt.focus();
   cmt.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); tAddComment(e.id); } });
