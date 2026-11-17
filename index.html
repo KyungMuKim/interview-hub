@@ -57,7 +57,7 @@
   @media (min-width:900px){
     .split.tsplit{flex-wrap:nowrap;}
     .split.tsplit .main, .split.tsplit .side{flex:1; min-width:0; height:calc(100vh - 170px); min-height:420px; overflow-y:auto; padding-right:8px;}
-    .split.tsplit #cmt{min-height:calc(100vh - 470px);}
+    .split.tsplit #cmt{min-height:calc(100vh - 380px);}
   }
   .split{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
   .split .main{flex:2; min-width:320px;}
@@ -1185,13 +1185,10 @@ window.tOpenEssay = async function(essayId){
            <option value="all">전체 (자소서 전반)</option>
          </select>
          <div id="quoteBox" class="small" style="margin:6px 0"></div>
-         <div id="tplBox" class="small" style="margin:6px 0"></div>
          <textarea id="cmt" style="min-height:160px" placeholder="등록 버튼 또는 Ctrl+Enter로 등록 · Enter는 줄바꿈 (쓰던 글은 이 기기에 임시보관돼요)"></textarea>
          <div class="cnt" id="cmtCnt"></div>
-         <label class="small" style="display:block; margin:6px 0; cursor:pointer"><input type="checkbox" id="cmtProp" style="width:auto; margin-right:4px">✍️ 고쳐 쓴 글(제안본)로 등록 <span style="font-weight:400">· 학생이 자기 글과 비교하고 한 번에 바꿀 수 있어요. 설명을 같이 쓰려면 설명 아래에 --- 한 줄을 긋고 그 아래에 글을 쓰세요.</span></label>
-         <div class="row" style="margin-top:4px"><button class="btn-ghost btn-sm" onclick="tLoadForRewrite()">📋 학생 글 불러와서 고쳐 쓰기</button></div>
-         <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button>
-           <button class="btn-ghost btn-sm" onclick="tSaveTemplate()">＋ 이 문구를 템플릿으로</button></div>
+         <label class="small" style="display:block; margin:6px 0; cursor:pointer"><input type="checkbox" id="cmtProp" style="width:auto; margin-right:4px">✍️ 고쳐 쓴 글(제안본)로 등록 <span style="font-weight:400" title="학생이 자기 글과 비교하고 한 번에 바꿀 수 있어요. 설명을 같이 쓰려면 설명 아래에 --- 한 줄을 긋고 그 아래에 글을 쓰세요.">· 설명은 --- 위에</span> <button class="btn-ghost btn-sm" style="margin-left:6px" onclick="event.preventDefault(); tLoadForRewrite()">📋 학생 글 불러오기</button></label>
+         <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button></div>
          ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${isProp(c)?'<span class="badge b-both">제안본</span>':""}${quoteBox(c,false)}<div style="margin-top:6px">${esc(cmText(c))}</div><span class="small">${fmtDT(c.created_at)} · ${nc(isProp(c)?propSplit(cmText(c)).prop:cmText(c)).toLocaleString()}자 <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button>${["1","2","3"].includes(c.part)?` <button class="btn-ghost btn-sm" onclick="tToggleProp('${c.id}','${e.id}')">${isProp(c)?"제안본 해제":"제안본으로 표시"}</button>`:""}</span></div>`).join("")}`:""}
        </div>
      </div>
