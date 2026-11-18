@@ -1189,12 +1189,13 @@ window.tOpenEssay = async function(essayId){
          <div class="cnt" id="cmtCnt"></div>
          <label class="small" style="display:block; margin:6px 0; cursor:pointer"><input type="checkbox" id="cmtProp" style="width:auto; margin-right:4px">✍️ 고쳐 쓴 글(제안본)로 등록 <span style="font-weight:400" title="학생이 자기 글과 비교하고 한 번에 바꿀 수 있어요. 설명을 같이 쓰려면 설명 아래에 --- 한 줄을 긋고 그 아래에 글을 쓰세요.">· 설명은 --- 위에</span> <button class="btn-ghost btn-sm" style="margin-left:6px" onclick="event.preventDefault(); tLoadForRewrite()">📋 학생 글 불러오기</button></label>
          <div class="row"><button class="btn-primary" onclick="tAddComment('${e.id}')">코멘트 등록</button></div>
-         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${isProp(c)?'<span class="badge b-both">제안본</span>':""}${quoteBox(c,false)}<div style="margin-top:6px">${esc(cmText(c))}</div><span class="small">${fmtDT(c.created_at)} · ${nc(isProp(c)?propSplit(cmText(c)).prop:cmText(c)).toLocaleString()}자 <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button>${["1","2","3"].includes(c.part)?` <button class="btn-ghost btn-sm" onclick="tToggleProp('${c.id}','${e.id}')">${isProp(c)?"제안본 해제":"제안본으로 표시"}</button>`:""}</span></div>`).join("")}`:""}
+         ${(comments&&comments.length)?`<h3>등록된 코멘트</h3>${comments.map(c=>`<div class="comment" id="cm-${c.id}">${partBadge(c.part||"all")} ${c.student_status==="applied"?'<span class="badge b-eng">반영됨</span>':c.student_status==="seen"?'<span class="badge b-oego">확인함</span>':'<span class="badge b-jasa">미확인</span>'}${isProp(c)?'<span class="badge b-both">제안본</span>':""}${quoteBox(c,false)}<div style="margin-top:6px">${esc(cmText(c))}</div><span class="small">${fmtDT(c.created_at)} · ${nc(isProp(c)?propSplit(cmText(c)).prop:cmText(c)).toLocaleString()}자 <button class="btn-ghost btn-sm" onclick="tEditComment('${c.id}','${e.id}')">수정</button> <button class="btn-ghost btn-sm" onclick="tDelComment('${c.id}','${e.id}')">삭제</button>${["1","2","3"].includes(c.part)?` <button class="btn-ghost btn-sm" onclick="tToggleProp('${c.id}','${e.id}')">${isProp(c)?"제안본 해제":"제안본으로 표시"}</button>`:""}</span></div>`).join("")}`:""}
        </div>
      </div>
    </div>`;
   window._essayTexts = { "1": e.content||"", "2": e.content2||"", "3": e.content3||"", "backup": e.backup_content||"" };
   window._quote = null;
+  window._tComments = comments||[];
   const cmt = document.getElementById("cmt");
   window._cmtEssay = e.id;
   const cd = cmtDraftRead(e.id);   // 쓰다 만 코멘트 되살리기
@@ -1317,6 +1318,48 @@ window.tAddComment = async function(essayId){
   if(error) return alert(error.message);
   try{ localStorage.removeItem(cmtDraftKey(essayId)); }catch(e){}
   tOpenEssay(essayId);
+};
+/* 등록한 코멘트 고치기: 카드 자리에서 바로 수정. 제안본 표시([[제안본]])와 인용은 그대로 유지 */
+window.tEditComment = function(id, essayId){
+  const c = (window._tComments||[]).find(x=>x.id===id), box = document.getElementById("cm-"+id); if(!c || !box) return;
+  if(document.querySelector(".comment.editing")) return alert("수정 중인 코멘트가 있어요. 먼저 저장하거나 취소하세요.");
+  const src = document.getElementById("cmtPart");
+  box.classList.add("editing"); box.style.whiteSpace = "normal";
+  box.innerHTML = `<b>코멘트 수정</b>${isProp(c)?' <span class="badge b-both">제안본</span>':""}`
+    + `<select id="edPart" style="width:100%; margin-top:6px">${src?src.innerHTML:""}</select>`
+    + quoteBox(c,false)
+    + `<textarea id="edCmt" style="min-height:${isProp(c)?320:180}px; margin-top:6px"></textarea>`
+    + `<div class="cnt" id="edCnt"></div>`
+    + `<label class="small" style="display:block; margin:6px 0; cursor:pointer"><input type="checkbox" id="edRenotify" style="width:auto; margin-right:4px">학생에게 새 코멘트로 다시 알리기 <span style="font-weight:400">(지금 상태: ${c.student_status==="applied"?"반영됨":c.student_status==="seen"?"확인함":"미확인"})</span></label>`
+    + `<div class="row"><button class="btn-primary" onclick="tSaveComment('${id}','${essayId}')">수정 저장</button> <button class="btn-ghost" onclick="tCancelEdit('${essayId}')">취소</button></div>`;
+  const ps = document.getElementById("edPart"), ta = document.getElementById("edCmt"), part = c.part||"all";
+  if(![...ps.options].some(o=>o.value===part)) ps.add(new Option(partName(part), part));
+  ps.value = part; ta.value = cmText(c);
+  if(!c.student_status){ const rn = document.getElementById("edRenotify"); rn.checked = true; rn.disabled = true; }
+  const cnt = () => { const v = ta.value, m = v.match(/^[ \t]*[-─—=]{3,}[ \t]*$/m);
+    document.getElementById("edCnt").textContent = `코멘트 ${nc(v).toLocaleString()}자 (공백 제외)` + (m ? ` · 구분선 아래 ${nc(v.slice(m.index + m[0].length)).toLocaleString()}자` : ""); };
+  ta.addEventListener("input", cnt); cnt();
+  ta.addEventListener("keydown", ev=>{ if(ev.key==="Enter" && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); tSaveComment(id, essayId); } });
+  ta.focus();
+};
+window.tCancelEdit = function(essayId){
+  const c = (window._tComments||[]).find(x=>("cm-"+x.id)===(document.querySelector(".comment.editing")||{}).id), ta = document.getElementById("edCmt");
+  if(c && ta && ta.value !== cmText(c) && !confirm("고친 내용을 버릴까요?")) return;
+  tOpenEssay(essayId);
+};
+window.tSaveComment = async function(id, essayId){
+  const c = (window._tComments||[]).find(x=>x.id===id); if(!c) return;
+  const content = (document.getElementById("edCmt").value||"").trim();
+  if(!content) return alert("내용을 입력하세요");
+  const part = document.getElementById("edPart").value, wasProp = isProp(c);
+  if(wasProp && !["1","2","3"].includes(part)) return alert("제안본은 영역을 ① ② ③ 중 하나로 골라야 학생이 그 칸에 바로 적용할 수 있어요");
+  if(wasProp && !propSplit(content).prop) return alert("구분선(---) 아래에 고쳐 쓴 글이 없어요");
+  const upd = { content: wasProp ? PROP_TAG + "\n" + content : content, part };
+  if(document.getElementById("edRenotify").checked){ upd.student_status = null; upd.student_status_at = null; }
+  const { data, error } = await sb.from("essay_comments").update(upd).eq("id", id).select("id");
+  if(error) return alert(error.message);
+  if(!data || !data.length) return alert("저장되지 않았어요. 코멘트가 이미 삭제됐는지 확인하세요.");
+  await tOpenEssay(essayId);
 };
 window.tDelComment = async function(id, essayId){
   const { error } = await sb.from("essay_comments").delete().eq("id", id);
